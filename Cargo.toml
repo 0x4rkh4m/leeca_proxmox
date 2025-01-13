@@ -2,6 +2,7 @@
 name = "leeca_proxmox"
 version = "0.1.0"
 edition = "2021"
+authors = ["4rkh4m <4rkham@proton.me>"]
 
 [dependencies]
 async-trait = "0.1.85"
