@@ -1,2 +1,2 @@
-pub mod proxmox_auth;
-pub mod proxmox_connection;
+pub(crate) mod proxmox_auth;
+pub(crate) mod proxmox_connection;

@@ -1,3 +1,3 @@
-pub mod error;
-pub mod model;
-pub mod value_object;
+pub(crate) mod error;
+pub(crate) mod model;
+pub(crate) mod value_object;

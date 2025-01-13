@@ -1,1 +1,1 @@
-pub mod domain;
+pub(super) mod domain;
