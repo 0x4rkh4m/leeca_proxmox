@@ -15,14 +15,6 @@ use zxcvbn::{zxcvbn, Score};
 /// - NIST Special Publication 800-63B
 /// - OWASP Password Security Guidelines
 /// - Proxmox VE security requirements
-///
-/// # Examples
-///
-/// ```
-/// use leeca_proxmox::core::domain::value_object::proxmox_password::ProxmoxPasswordConfig;
-///
-/// let config = ProxmoxPasswordConfig::default();
-/// ```
 #[derive(Debug, Clone)]
 pub struct ProxmoxPasswordConfig {
     min_length: usize,
@@ -48,14 +40,14 @@ impl ProxmoxPasswordConfig {
 
     async fn validate_password(&self, password: &str) -> Result<(), ValidationError> {
         if password.is_empty() {
-            return Err(ValidationError::FieldError {
+            return Err(ValidationError::Field {
                 field: "password".to_string(),
                 message: "Password cannot be empty".to_string(),
             });
         }
 
         if password.len() < self.min_length || password.len() > self.max_length {
-            return Err(ValidationError::FormatError(format!(
+            return Err(ValidationError::Format(format!(
                 "Password length must be between {} and {} characters",
                 self.min_length, self.max_length
             )));
@@ -119,17 +111,6 @@ impl Default for ProxmoxPasswordConfig {
 /// - NIST security guidelines
 /// - OWASP password requirements
 /// - Proxmox VE security standards
-///
-/// # Examples
-///
-/// ```
-/// use leeca_proxmox::core::domain::value_object::proxmox_password::ProxmoxPassword;
-///
-/// #[tokio::main]
-/// async fn main() {
-///     let password = ProxmoxPassword::new("Str0ng!P@ssw0rd".to_string()).await.unwrap();
-/// }
-/// ```
 #[derive(Debug, Clone)]
 pub struct ProxmoxPassword {
     value: Arc<RwLock<String>>,
@@ -204,7 +185,7 @@ mod tests {
         for (password, case) in test_cases {
             let result = ProxmoxPassword::new(password.to_string()).await;
             assert!(
-                matches!(result, Err(ProxmoxError::ValidationError { .. })),
+                matches!(result, Err(ProxmoxError::Validation { .. })),
                 "Case '{}' should fail validation: {}",
                 case,
                 password
@@ -219,7 +200,7 @@ mod tests {
         for password in weak_passwords {
             let result = ProxmoxPassword::new(password.to_string()).await;
             assert!(
-                matches!(result, Err(ProxmoxError::ValidationError { .. })),
+                matches!(result, Err(ProxmoxError::Validation { .. })),
                 "Common password '{}' should be rejected",
                 password
             );

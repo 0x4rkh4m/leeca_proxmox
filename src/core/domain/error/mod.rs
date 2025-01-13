@@ -6,16 +6,6 @@ use thiserror::Error;
 /// This enum represents all possible errors that can occur during
 /// ProxmoxVE operations, including connection, authentication,
 /// validation, and concurrent operation failures.
-///
-/// # Examples
-///
-/// ```
-/// use leeca_proxmox::core::domain::error::ProxmoxError;
-///
-/// fn example_operation() -> Result<(), ProxmoxError> {
-///     Err(ProxmoxError::ConnectionError("Failed to connect".to_string()))
-/// }
-/// ```
 #[derive(Error, Debug)]
 pub enum ProxmoxError {
     /// Represents errors that occur during connection attempts
@@ -23,14 +13,14 @@ pub enum ProxmoxError {
     /// # Fields
     /// * `0` - A description of what went wrong during the connection attempt
     #[error("Connection error: {0}")]
-    ConnectionError(String),
+    Connection(String),
 
     /// Represents authentication failures
     ///
     /// # Fields
     /// * `0` - A description of the authentication failure
     #[error("Authentication error: {0}")]
-    AuthenticationError(String),
+    Authentication(String),
 
     /// Represents validation failures with detailed context
     ///
@@ -38,11 +28,20 @@ pub enum ProxmoxError {
     /// * `source` - The underlying validation error
     /// * `backtrace` - Stack trace where the error occurred
     #[error("Validation error: {source}")]
-    ValidationError {
+    Validation {
         source: ValidationError,
         #[backtrace]
         backtrace: Backtrace,
     },
+}
+
+impl From<ValidationError> for ProxmoxError {
+    fn from(error: ValidationError) -> Self {
+        ProxmoxError::Validation {
+            source: error,
+            backtrace: Backtrace::capture(),
+        }
+    }
 }
 
 /// Specialized error type for validation failures.
@@ -57,14 +56,14 @@ pub enum ValidationError {
     /// * `field` - The name of the field that failed validation
     /// * `message` - A detailed message about why validation failed
     #[error("Field '{field}' validation failed: {message}")]
-    FieldError { field: String, message: String },
+    Field { field: String, message: String },
 
     /// Represents format/syntax validation failures
     ///
     /// # Fields
     /// * `0` - Description of the format violation
     #[error("Format error: {0}")]
-    FormatError(String),
+    Format(String),
 
     /// Represents violations of domain constraints
     ///

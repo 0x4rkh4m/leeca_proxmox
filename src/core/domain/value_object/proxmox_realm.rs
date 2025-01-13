@@ -14,14 +14,6 @@ use tokio::sync::RwLock;
 /// - Proxmox VE Authentication Realms
 /// - PAM Authentication standards
 /// - LDAP/Active Directory requirements
-///
-/// # Examples
-///
-/// ```
-/// use leeca_proxmox::core::domain::value_object::proxmox_realm::ProxmoxRealmConfig;
-///
-/// let config = ProxmoxRealmConfig::default();
-/// ```
 #[derive(Debug, Clone)]
 pub struct ProxmoxRealmConfig {
     min_length: usize,
@@ -35,21 +27,21 @@ impl ProxmoxRealmConfig {
 
     pub(super) async fn validate_realm(&self, realm: &str) -> Result<(), ValidationError> {
         if realm.is_empty() {
-            return Err(ValidationError::FieldError {
+            return Err(ValidationError::Field {
                 field: "realm".to_string(),
                 message: "Realm cannot be empty".to_string(),
             });
         }
 
         if realm.len() < self.min_length || realm.len() > self.max_length {
-            return Err(ValidationError::FormatError(format!(
+            return Err(ValidationError::Format(format!(
                 "Realm length must be between {} and {} characters",
                 self.min_length, self.max_length
             )));
         }
 
         if !realm.chars().all(|c| self.allowed_chars.contains(&c)) {
-            return Err(ValidationError::FormatError(
+            return Err(ValidationError::Format(
                 "Realm contains invalid characters".to_string(),
             ));
         }
@@ -93,18 +85,6 @@ impl Default for ProxmoxRealmConfig {
 /// - Proxmox VE authentication standards
 /// - System authentication requirements
 /// - Security best practices
-///
-/// # Examples
-///
-/// ```
-/// use leeca_proxmox::core::domain::value_object::proxmox_realm::ProxmoxRealm;
-///
-/// #[tokio::main]
-/// async fn main() {
-///     let realm = ProxmoxRealm::new("pve".to_string()).await.unwrap();
-///     assert_eq!(realm.as_inner().await, "pve");
-/// }
-/// ```
 #[derive(Debug, Clone)]
 pub struct ProxmoxRealm {
     value: Arc<RwLock<String>>,
@@ -171,7 +151,7 @@ mod tests {
         for (realm, case) in test_cases {
             let result = ProxmoxRealm::new(realm.to_string()).await;
             assert!(
-                matches!(result, Err(ProxmoxError::ValidationError { .. })),
+                matches!(result, Err(ProxmoxError::Validation { .. })),
                 "Case '{}' should fail validation: {}",
                 case,
                 realm

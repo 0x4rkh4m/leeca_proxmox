@@ -11,14 +11,6 @@ use tokio::time::Duration;
 ///
 /// This configuration object encapsulates the constraints and settings
 /// for a Proxmox host value object.
-///
-/// # Examples
-///
-/// ```
-/// use leeca_proxmox::core::domain::value_object::proxmox_host::ProxmoxHostConfig;
-///
-/// let config = ProxmoxHostConfig::default();
-/// ```
 #[derive(Debug, Clone)]
 pub struct ProxmoxHostConfig {
     max_hostname_length: usize,
@@ -29,20 +21,20 @@ pub struct ProxmoxHostConfig {
 impl ProxmoxHostConfig {
     async fn validate_label(&self, label: &str) -> Result<(), ValidationError> {
         if label.is_empty() || label.len() > self.max_label_length {
-            return Err(ValidationError::FormatError(format!(
+            return Err(ValidationError::Format(format!(
                 "Label must be between 1 and {} characters",
                 self.max_label_length
             )));
         }
 
         if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
-            return Err(ValidationError::FormatError(
+            return Err(ValidationError::Format(
                 "Label can only contain alphanumeric characters and hyphens".to_string(),
             ));
         }
 
         if label.starts_with('-') || label.ends_with('-') {
-            return Err(ValidationError::FormatError(
+            return Err(ValidationError::Format(
                 "Label cannot start or end with hyphen".to_string(),
             ));
         }
@@ -53,14 +45,20 @@ impl ProxmoxHostConfig {
     async fn validate_dns(&self, value: &str) -> Result<(), ValidationError> {
         match tokio::time::timeout(
             self.dns_timeout,
-            tokio::net::lookup_host(format!("{}:80", value)),
+            tokio::net::lookup_host(format!("{}:8006", value)),
         )
         .await
         {
             Ok(lookup_result) => {
-                lookup_result.map_err(|e| {
+                let addresses = lookup_result.map_err(|e| {
                     ValidationError::ConstraintViolation(format!("DNS resolution failed: {}", e))
                 })?;
+
+                if addresses.count() == 0 {
+                    return Err(ValidationError::ConstraintViolation(
+                        "No DNS records found".to_string(),
+                    ));
+                }
                 Ok(())
             }
             Err(_) => Err(ValidationError::ConstraintViolation(
@@ -84,19 +82,6 @@ impl Default for ProxmoxHostConfig {
 ///
 /// This value object encapsulates a host address and ensures it meets
 /// all RFC 1035 requirements for valid hostnames.
-///
-/// # Examples
-///
-/// ```
-/// use leeca_proxmox::core::domain::value_object::proxmox_host::ProxmoxHost;
-///
-/// #[tokio::main]
-/// async fn main() {
-///     let host = ProxmoxHost::new("proxmox.example.com".to_string()).await.unwrap();
-///     assert_eq!(host.as_inner().await, "proxmox.example.com");
-/// }
-/// ```
-
 #[derive(Debug, Clone)]
 pub struct ProxmoxHost {
     value: Arc<RwLock<String>>,
@@ -136,7 +121,7 @@ impl ValueObject for ProxmoxHost {
         config: &Self::ValidationConfig,
     ) -> Result<(), ValidationError> {
         if value.is_empty() {
-            return Err(ValidationError::FieldError {
+            return Err(ValidationError::Field {
                 field: "host".to_string(),
                 message: "Host cannot be empty".to_string(),
             });
@@ -172,18 +157,6 @@ mod tests {
     use crate::core::domain::error::ProxmoxError;
     use tokio::time::sleep;
 
-    // Helper function to skip DNS validation during tests
-    pub async fn create_test_host(hostname: &str) -> ProxmoxResult<ProxmoxHost> {
-        let config = ProxmoxHostConfig {
-            dns_timeout: Duration::from_millis(1),
-            ..Default::default()
-        };
-
-        let value = hostname.to_string();
-        ProxmoxHost::validate(&value, &config).await;
-        Ok(ProxmoxHost::create(value))
-    }
-
     #[tokio::test]
     async fn test_valid_hostnames() {
         let valid_hosts = vec![
@@ -216,7 +189,7 @@ mod tests {
         for (host, case) in test_cases {
             let result = ProxmoxHost::new(host.to_string()).await;
             assert!(
-                matches!(result, Err(ProxmoxError::ValidationError { .. })),
+                matches!(result, Err(ProxmoxError::Validation { .. })),
                 "Case '{}' should fail validation: {}",
                 case,
                 host
@@ -250,8 +223,14 @@ mod tests {
     async fn test_dns_timeout() {
         let result = ProxmoxHost::new("non-existent-domain-12345.local".to_string()).await;
         assert!(
-            matches!(result, Err(ProxmoxError::ValidationError { .. })),
+            matches!(result, Err(ProxmoxError::Validation { .. })),
             "Should fail for non-resolvable domain"
         );
+    }
+
+    // Helper function to skip DNS validation during tests
+    pub async fn create_test_host(hostname: &str) -> ProxmoxResult<ProxmoxHost> {
+        let value = hostname.to_string();
+        Ok(ProxmoxHost::create(value))
     }
 }

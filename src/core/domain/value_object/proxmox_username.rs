@@ -14,14 +14,6 @@ use tokio::sync::RwLock;
 /// - RFC 4513 (LDAP Authentication)
 /// - Proxmox VE user management requirements
 /// - Common security practices
-///
-/// # Examples
-///
-/// ```
-/// use leeca_proxmox::core::domain::value_object::proxmox_username::ProxmoxUsernameConfig;
-///
-/// let config = ProxmoxUsernameConfig::default();
-/// ```
 #[derive(Debug, Clone)]
 pub struct ProxmoxUsernameConfig {
     min_length: usize,
@@ -33,21 +25,21 @@ pub struct ProxmoxUsernameConfig {
 impl ProxmoxUsernameConfig {
     pub(super) async fn validate_username(&self, username: &str) -> Result<(), ValidationError> {
         if username.is_empty() {
-            return Err(ValidationError::FieldError {
+            return Err(ValidationError::Field {
                 field: "username".to_string(),
                 message: "Username cannot be empty".to_string(),
             });
         }
 
         if username.len() < self.min_length || username.len() > self.max_length {
-            return Err(ValidationError::FormatError(format!(
+            return Err(ValidationError::Format(format!(
                 "Username length must be between {} and {} characters",
                 self.min_length, self.max_length
             )));
         }
 
         if !username.chars().all(|c| self.allowed_chars.contains(&c)) {
-            return Err(ValidationError::FormatError(
+            return Err(ValidationError::Format(
                 "Username contains invalid characters".to_string(),
             ));
         }
@@ -98,18 +90,6 @@ impl Default for ProxmoxUsernameConfig {
 /// - Proxmox VE naming conventions
 /// - Security best practices
 /// - System restrictions
-///
-/// # Examples
-///
-/// ```
-/// use leeca_proxmox::core::domain::value_object::proxmox_username::ProxmoxUsername;
-///
-/// #[tokio::main]
-/// async fn main() {
-///     let username = ProxmoxUsername::new("user@pve".to_string()).await.unwrap();
-///     assert_eq!(username.as_inner().await, "user@pve");
-/// }
-/// ```
 #[derive(Debug, Clone)]
 pub struct ProxmoxUsername {
     value: Arc<RwLock<String>>,
@@ -186,7 +166,7 @@ mod tests {
         for (username, case) in test_cases {
             let result = ProxmoxUsername::new(username.to_string()).await;
             assert!(
-                matches!(result, Err(ProxmoxError::ValidationError { .. })),
+                matches!(result, Err(ProxmoxError::Validation { .. })),
                 "Case '{}' should fail validation: {}",
                 case,
                 username

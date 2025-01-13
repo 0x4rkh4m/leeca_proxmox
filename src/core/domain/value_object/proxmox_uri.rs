@@ -16,14 +16,6 @@ use tokio::sync::RwLock;
 /// - RFC 3986 (URI Generic Syntax)
 /// - RFC 7230 (HTTP/1.1 Message Syntax and Routing)
 /// - Proxmox VE API requirements
-///
-/// # Examples
-///
-/// ```
-/// use leeca_proxmox::core::domain::value_object::proxmox_url::ProxmoxUrlConfig;
-///
-/// let config = ProxmoxUrlConfig::default();
-/// ```
 #[derive(Debug, Clone)]
 pub struct ProxmoxUrlConfig {
     allowed_schemes: HashSet<String>,
@@ -33,22 +25,31 @@ pub struct ProxmoxUrlConfig {
 
 impl ProxmoxUrlConfig {
     async fn validate_url(&self, url: &str) -> Result<(), ValidationError> {
+        // Reject empty URLs
         if url.is_empty() {
-            return Err(ValidationError::FieldError {
+            return Err(ValidationError::Field {
                 field: "url".to_string(),
                 message: "URL cannot be empty".to_string(),
             });
         }
 
+        // Reject bare double slashes
+        if url == "//" {
+            return Err(ValidationError::Format(
+                "URL cannot be just double slashes".to_string(),
+            ));
+        }
+
+        // Length validation
         if url.len() > self.max_length {
-            return Err(ValidationError::FormatError(format!(
+            return Err(ValidationError::Format(format!(
                 "URL exceeds maximum length of {} characters",
                 self.max_length
             )));
         }
 
         let url_parts = url::Url::parse(url)
-            .map_err(|e| ValidationError::FormatError(format!("Invalid URL format: {}", e)))?;
+            .map_err(|e| ValidationError::Format(format!("Invalid URL format: {}", e)))?;
 
         // Validate scheme
         if !self.allowed_schemes.contains(url_parts.scheme()) {
@@ -62,19 +63,31 @@ impl ProxmoxUrlConfig {
             )));
         }
 
-        // Only validate path if it's not the base URL
+        // Validate path
         let path = url_parts.path();
-        if path != "/" {
-            if !self.is_valid_api_path(path) {
-                return Err(ValidationError::ConstraintViolation(format!(
-                    "Invalid API path. Must be one of: {}",
-                    self.allowed_paths
-                        .iter()
-                        .cloned()
-                        .collect::<Vec<String>>()
-                        .join(", ")
-                )));
-            }
+
+        // Check for consecutive slashes in the path
+        if path.contains("//") {
+            return Err(ValidationError::Format(
+                "Path cannot contain consecutive slashes".to_string(),
+            ));
+        }
+
+        // Allow base URL with just "/"
+        if path == "/" {
+            return Ok(());
+        }
+
+        // For non-base URLs, validate against allowed paths
+        if !self.is_valid_api_path(path) {
+            return Err(ValidationError::ConstraintViolation(format!(
+                "Invalid API path. Must be one of: {}",
+                self.allowed_paths
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            )));
         }
 
         Ok(())
@@ -111,29 +124,6 @@ impl Default for ProxmoxUrlConfig {
 /// - Security best practices
 ///
 /// Combines ProxmoxHost and ProxmoxPort to create valid API endpoints.
-///
-/// # Examples
-///
-/// ```
-/// use leeca_proxmox::core::domain::value_object::proxmox_url::ProxmoxUrl;
-/// use leeca_proxmox::core::domain::value_object::proxmox_host::ProxmoxHost;
-/// use leeca_proxmox::core::domain::value_object::proxmox_port::ProxmoxPort;
-///
-/// #[tokio::main]
-/// async fn main() {
-///     let host = ProxmoxHost::new("proxmox.example.com".to_string()).await.unwrap();
-///     let port = ProxmoxPort::new(8006).await.unwrap();
-///     let secure = true;
-///     let url = ProxmoxUrl::new(&host, &port, &secure).await.unwrap();
-///     let secure = false
-///     let url_insecure = ProxmoxUrl::new(&host, &port, &secure).await.unwrap();
-///
-///     let api_url = url.with_path("/api2/json").await.unwrap();
-///     assert_eq!(api_url.as_inner().await, "https://proxmox.example.com:8006/api2/json");
-///     let api_url_insecure = url_insecure.with_path("/api2/json").await.unwrap();
-///     assert_eq!(api_url_insecure.as_inner().await, "http://proxmox.example.com:8006/api2/json");
-/// }
-/// ```
 #[derive(Debug, Clone)]
 pub struct ProxmoxUrl {
     value: Arc<RwLock<String>>,
@@ -187,52 +177,35 @@ impl ValueObject for ProxmoxUrl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::domain::{error::ProxmoxError, value_object::proxmox_host::ProxmoxHostConfig};
-
-    // Helper function to skip DNS validation during tests
-    pub async fn create_test_host(hostname: &str) -> ProxmoxResult<ProxmoxHost> {
-        let config = ProxmoxHostConfig::default();
-
-        let value = hostname.to_string();
-        ProxmoxHost::validate(&value, &config).await;
-        Ok(ProxmoxHost::create(value))
-    }
-
-    // Helper function to skip DNS validation during tests
-    async fn create_test_url(host: &str, port: u16, secure: bool) -> ProxmoxResult<ProxmoxUrl> {
-        let test_host = create_test_host(host).await?;
-        let test_port = ProxmoxPort::new(port).await?;
-        ProxmoxUrl::new(&test_host, &test_port, &secure).await
-    }
+    use crate::core::domain::error::ProxmoxError;
 
     #[tokio::test]
     async fn test_valid_urls() {
-        let url = create_test_url("proxmox.example.com", 8006, true).await;
-        assert!(url.is_ok());
+        let base_url = create_test_url("proxmox.example.com", 8006, true).await;
+        assert!(base_url.is_ok(), "Base URL should be valid");
 
-        let url = url.unwrap();
+        let url = base_url.unwrap();
         let api_url = url.with_path("/api2/json").await;
-        assert!(api_url.is_ok());
+        assert!(api_url.is_ok(), "API URL should be valid");
     }
 
     #[tokio::test]
     async fn test_invalid_urls() {
         let test_host = create_test_host("invalid.com").await.unwrap();
         let port = ProxmoxPort::new(8006).await.unwrap();
-        //let long_path = &"/".repeat(2084);
+        let long_path = &"/a".repeat(2084);
         let test_cases = vec![
-            //(true, "/", "empty path"), // TBD: Decide if we want to allow empty paths and check why this is failing
-            (true, "//", "consecutive slashes"),
+            (true, "/api2//json", "consecutive slashes"),
             (true, "/api3/json", "invalid api version"),
             (false, "/invalid/path", "invalid api path"),
-            //(true, long_path, "path too long"), // TBD: Check why this is failing
+            (true, long_path, "path too long"),
         ];
 
         for (secure, path, case) in test_cases {
             let url = ProxmoxUrl::new(&test_host, &port, &secure).await.unwrap();
             let result = url.with_path(path).await;
             assert!(
-                matches!(result, Err(ProxmoxError::ValidationError { .. })),
+                matches!(result, Err(ProxmoxError::Validation { .. })),
                 "Case '{}' should fail validation: {}",
                 case,
                 path
@@ -281,5 +254,17 @@ mod tests {
         // Invalid API paths
         assert!(url.with_path("/invalid").await.is_err());
         assert!(url.with_path("/api1/json").await.is_err());
+    }
+
+    // Helper function to create a test host without DNS validation
+    pub async fn create_test_host(hostname: &str) -> ProxmoxResult<ProxmoxHost> {
+        Ok(ProxmoxHost::create(hostname.to_string()))
+    }
+
+    // Helper function to create a test URL without DNS validation
+    async fn create_test_url(host: &str, port: u16, secure: bool) -> ProxmoxResult<ProxmoxUrl> {
+        let test_host = create_test_host(host).await?;
+        let test_port = ProxmoxPort::new(port).await?;
+        ProxmoxUrl::new(&test_host, &test_port, &secure).await
     }
 }

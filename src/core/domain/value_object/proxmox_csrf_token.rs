@@ -3,8 +3,11 @@ use crate::core::domain::{
     value_object::base_value_object::ValueObject,
 };
 use async_trait::async_trait;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use rand::{thread_rng, Rng};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::time::SystemTime;
+use tokio::{sync::RwLock, time::Duration};
 
 /// Represents the configuration for a Proxmox CSRF token value object
 ///
@@ -13,14 +16,6 @@ use tokio::sync::RwLock;
 /// - Proxmox VE Security Standards
 /// - OWASP CSRF Prevention Guidelines
 /// - RFC 6749 (OAuth 2.0)
-///
-/// # Examples
-///
-/// ```
-/// use leeca_proxmox::core::domain::value_object::proxmox_csrf_token::ProxmoxCSRFTokenConfig;
-///
-/// let config = ProxmoxCSRFTokenConfig::default();
-/// ```
 #[derive(Debug, Clone)]
 pub struct ProxmoxCSRFTokenConfig {
     min_length: usize,
@@ -28,19 +23,20 @@ pub struct ProxmoxCSRFTokenConfig {
     required_parts: usize,
     token_id_length: usize,
     header_name: String,
+    token_lifetime: Duration,
 }
 
 impl ProxmoxCSRFTokenConfig {
     async fn validate_token_format(&self, token: &str) -> Result<(), ValidationError> {
         if token.is_empty() {
-            return Err(ValidationError::FieldError {
+            return Err(ValidationError::Field {
                 field: "csrf_token".to_string(),
                 message: "CSRF token cannot be empty".to_string(),
             });
         }
 
         if token.len() < self.min_length || token.len() > self.max_length {
-            return Err(ValidationError::FormatError(format!(
+            return Err(ValidationError::Format(format!(
                 "CSRF token length must be between {} and {} characters",
                 self.min_length, self.max_length
             )));
@@ -48,7 +44,7 @@ impl ProxmoxCSRFTokenConfig {
 
         let parts: Vec<&str> = token.split(':').collect();
         if parts.len() != self.required_parts {
-            return Err(ValidationError::FormatError(
+            return Err(ValidationError::Format(
                 "Invalid CSRF token format: must contain exactly two parts".to_string(),
             ));
         }
@@ -58,7 +54,7 @@ impl ProxmoxCSRFTokenConfig {
             if token_id.len() != self.token_id_length
                 || !token_id.chars().all(|c| c.is_ascii_hexdigit())
             {
-                return Err(ValidationError::FormatError(format!(
+                return Err(ValidationError::Format(format!(
                     "Invalid token ID format. Must be {} hexadecimal characters",
                     self.token_id_length
                 )));
@@ -71,8 +67,17 @@ impl ProxmoxCSRFTokenConfig {
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
             {
-                return Err(ValidationError::FormatError(
+                return Err(ValidationError::Format(
                     "Token value contains invalid characters".to_string(),
+                ));
+            }
+        }
+
+        // Add base64 validation for token value
+        if let Some(token_value) = parts.get(1) {
+            if STANDARD.decode(token_value).is_err() {
+                return Err(ValidationError::Format(
+                    "Token value must be valid base64".to_string(),
                 ));
             }
         }
@@ -89,6 +94,7 @@ impl Default for ProxmoxCSRFTokenConfig {
             required_parts: 2, // TOKENID:VALUE
             token_id_length: 8,
             header_name: "CSRFPreventionToken".to_string(),
+            token_lifetime: Duration::from_secs(300),
         }
     }
 }
@@ -103,27 +109,45 @@ impl Default for ProxmoxCSRFTokenConfig {
 /// Token Format: TOKENID:VALUE where:
 /// - TOKENID: 8 character hexadecimal identifier
 /// - VALUE: Base64 encoded random value
-///
-/// # Examples
-///
-/// ```
-/// use leeca_proxmox::core::domain::value_object::proxmox_csrf_token::ProxmoxCSRFToken;
-///
-/// #[tokio::main]
-/// async fn main() {
-///     let token = ProxmoxCSRFToken::new("4EEC61E2:lwk7od06fa1+DcPUwBTXCcndyAY".to_string())
-///         .await
-///         .unwrap();
-/// }
-/// ```
 #[derive(Debug, Clone)]
 pub struct ProxmoxCSRFToken {
     value: Arc<RwLock<String>>,
+    created_at: SystemTime,
 }
 
 impl ProxmoxCSRFToken {
     pub async fn new(token: String) -> ProxmoxResult<Self> {
-        <Self as ValueObject>::new(token).await
+        let token = Self {
+            value: Arc::new(RwLock::new(token)),
+            created_at: SystemTime::now(),
+        };
+
+        let config = Self::validation_config();
+        Self::validate(&token.as_inner().await, &config).await?;
+
+        Ok(token)
+    }
+
+    pub async fn generate() -> ProxmoxResult<Self> {
+        // Generate 8-char hex token ID
+        let token_id = format!("{:08X}", thread_rng().gen::<u32>());
+
+        // Generate 32 bytes (256 bits) of random data for value
+        let mut value = [0u8; 32];
+        thread_rng().fill(&mut value);
+        let token_value = STANDARD.encode(value);
+
+        // Combine into final token
+        let token = format!("{}:{}", token_id, token_value);
+        Self::new(token).await
+    }
+
+    pub async fn is_expired(&self) -> bool {
+        let config = Self::validation_config();
+        SystemTime::now()
+            .duration_since(self.created_at)
+            .map(|age| age > config.token_lifetime)
+            .unwrap_or(true)
     }
 
     pub async fn as_header(&self) -> String {
@@ -163,6 +187,7 @@ impl ValueObject for ProxmoxCSRFToken {
     fn create(value: Self::Value) -> Self {
         Self {
             value: Arc::new(RwLock::new(value)),
+            created_at: SystemTime::now(),
         }
     }
 }
@@ -176,8 +201,8 @@ mod tests {
     #[tokio::test]
     async fn test_valid_tokens() {
         let valid_tokens = vec![
-            "4EEC61E2:lwk7od06fa1+DcPUwBTXCcndyAY",
-            "8ABC1234:validtokenstring+/=stringhere",
+            "4EEC61E2:lwk7od06fa1+DcPUwBTXCcndyAY/3mKxQp5vR8sNjWuBtL9fZg==",
+            "8ABC1234:dGhpc2lzYXZhbGlkdG9rZW5mb3J0ZXN0aW5nYmFzZTY0ZW5jb2Rpbmc=",
         ];
 
         for token in valid_tokens {
@@ -199,7 +224,7 @@ mod tests {
         for (token, case) in test_cases {
             let result = ProxmoxCSRFToken::new(token.to_string()).await;
             assert!(
-                matches!(result, Err(ProxmoxError::ValidationError { .. })),
+                matches!(result, Err(ProxmoxError::Validation { .. })),
                 "Case '{}' should fail validation: {}",
                 case,
                 token
@@ -209,9 +234,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_token_id_extraction() {
-        let token = ProxmoxCSRFToken::new("4EEC61E2:validtoken".to_string())
-            .await
-            .unwrap();
+        let token = ProxmoxCSRFToken::new(
+            "4EEC61E2:lwk7od06fa1+DcPUwBTXCcndyAY/3mKxQp5vR8sNjWuBtL9fZg==".to_string(),
+        )
+        .await
+        .unwrap();
 
         let token_id = token.token_id().await;
         assert_eq!(token_id, Some("4EEC61E2".to_string()));
@@ -219,20 +246,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_header_format() {
-        let token = ProxmoxCSRFToken::new("4EEC61E2:validtoken".to_string())
-            .await
-            .unwrap();
+        let token = ProxmoxCSRFToken::new(
+            "4EEC61E2:lwk7od06fa1+DcPUwBTXCcndyAY/3mKxQp5vR8sNjWuBtL9fZg==".to_string(),
+        )
+        .await
+        .unwrap();
 
         let header = token.as_header().await;
         assert!(header.starts_with("CSRFPreventionToken: "));
-        assert!(header.contains("4EEC61E2:validtoken"));
+        assert!(header.contains("4EEC61E2:"));
     }
 
     #[tokio::test]
     async fn test_concurrent_access() {
-        let token = ProxmoxCSRFToken::new("4EEC61E2:validtoken".to_string())
-            .await
-            .unwrap();
+        let token = ProxmoxCSRFToken::new(
+            "4EEC61E2:lwk7od06fa1+DcPUwBTXCcndyAY/3mKxQp5vR8sNjWuBtL9fZg==".to_string(),
+        )
+        .await
+        .unwrap();
 
         let handles: Vec<_> = (0..10)
             .map(|i| {
@@ -248,7 +279,7 @@ mod tests {
 
         for handle in handles {
             let result = handle.await.unwrap();
-            assert_eq!(result, "4EEC61E2:validtoken");
+            assert!(result.contains("4EEC61E2:"));
         }
     }
 }

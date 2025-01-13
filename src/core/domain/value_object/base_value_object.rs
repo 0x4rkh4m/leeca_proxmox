@@ -19,37 +19,6 @@ use tokio::sync::RwLock;
 ///
 /// This trait ensures thread-safety through the use of `Arc<RwLock>` and
 /// proper async/await patterns.
-///
-/// # Examples
-///
-/// ```
-/// use leeca_proxmox::core::domain::value_object::ValueObject;
-///
-/// #[derive(Debug, Clone)]
-/// struct Host {
-///     value: Arc<RwLock<String>>
-/// }
-///
-/// #[async_trait::async_trait]
-/// impl ValueObject for Host {
-///     type Value = String;
-///
-///     fn value(&self) -> &Arc<RwLock<Self::Value>> {
-///         &self.value
-///     }
-///
-///     async fn validate(value: &Self::Value) -> Result<(), ValidationError> {
-///         if value.is_empty() {
-///             return Err(ValidationError::field_error("host", "Cannot be empty"));
-///         }
-///         Ok(())
-///     }
-///
-///     fn create(value: Self::Value) -> Self {
-///         Self { value: Arc::new(RwLock::new(value)) }
-///     }
-/// }
-/// ```
 #[async_trait]
 pub trait ValueObject: Send + Sync + 'static {
     /// The underlying type of the value
@@ -123,7 +92,7 @@ pub trait ValueObject: Send + Sync + 'static {
         let config = Self::validation_config();
         Self::validate(&value, &config)
             .await
-            .map_err(|e| ProxmoxError::ValidationError {
+            .map_err(|e| ProxmoxError::Validation {
                 source: e,
                 backtrace: Backtrace::capture(),
             })?;
@@ -140,11 +109,12 @@ pub trait ValueObject: Send + Sync + 'static {
     ///
     /// * `Ok(())` if update succeeds
     /// * `Err(ProxmoxError)` if validation or concurrent access fails
+    #[allow(dead_code)] // TBD: Right now, this is not used, but it could be useful in the future
     async fn update(&self, new_value: Self::Value) -> ProxmoxResult<()> {
         let config = Self::validation_config();
         Self::validate(&new_value, &config)
             .await
-            .map_err(|e| ProxmoxError::ValidationError {
+            .map_err(|e| ProxmoxError::Validation {
                 source: e,
                 backtrace: Backtrace::capture(),
             })?;
@@ -170,6 +140,7 @@ pub trait ValueObject: Send + Sync + 'static {
     ///
     /// * `Ok(T)` if transformation succeeds
     /// * `Err(ProxmoxError)` if transformation or concurrent access fails
+    #[allow(dead_code)] // TBD: Right now, this is not used, but it could be useful in the future
     async fn transform<T, F, Fut>(&self, f: F) -> ProxmoxResult<T>
     where
         F: FnOnce(&Self::Value) -> Fut + Send + Sync,

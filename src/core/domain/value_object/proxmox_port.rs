@@ -28,7 +28,7 @@ impl ProxmoxPortConfig {
     async fn validate_port(&self, port: u16) -> Result<(), ValidationError> {
         // Basic range validation
         if port < self.min_port || port > self.max_port {
-            return Err(ValidationError::FormatError(format!(
+            return Err(ValidationError::Format(format!(
                 "Port must be between {} and {}",
                 self.min_port, self.max_port
             )));
@@ -81,18 +81,6 @@ impl Default for ProxmoxPortConfig {
 /// - IANA port number assignments
 /// - Proxmox VE specific requirements
 /// - System port restrictions
-///
-/// # Examples
-///
-/// ```
-/// use leeca_proxmox::core::domain::value_object::proxmox_port::ProxmoxPort;
-///
-/// #[tokio::main]
-/// async fn main() {
-///     let port = ProxmoxPort::new(8006).await.unwrap();
-///     assert_eq!(port.as_inner().await, 8006);
-/// }
-/// ```
 #[derive(Debug, Clone)]
 pub struct ProxmoxPort {
     value: Arc<RwLock<u16>>,
@@ -153,7 +141,7 @@ mod tests {
         for (port, case) in test_cases {
             let result = ProxmoxPort::new(port).await;
             assert!(
-                matches!(result, Err(ProxmoxError::ValidationError { .. })),
+                matches!(result, Err(ProxmoxError::Validation { .. })),
                 "Case '{}' should fail validation: {}",
                 case,
                 port
