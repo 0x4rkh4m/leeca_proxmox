@@ -3,8 +3,6 @@ use crate::core::domain::{
     value_object::base_value_object::ValueObject,
 };
 use async_trait::async_trait;
-use base64::{engine::general_purpose::STANDARD, Engine as _};
-use rand::{thread_rng, Rng};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::{sync::RwLock, time::Duration};
@@ -72,16 +70,6 @@ impl ProxmoxCSRFTokenConfig {
                 ));
             }
         }
-
-        // Add base64 validation for token value
-        if let Some(token_value) = parts.get(1) {
-            if STANDARD.decode(token_value).is_err() {
-                return Err(ValidationError::Format(
-                    "Token value must be valid base64".to_string(),
-                ));
-            }
-        }
-
         Ok(())
     }
 }
@@ -126,20 +114,6 @@ impl ProxmoxCSRFToken {
         Self::validate(&token.as_inner().await, &config).await?;
 
         Ok(token)
-    }
-
-    pub async fn generate() -> ProxmoxResult<Self> {
-        // Generate 8-char hex token ID
-        let token_id = format!("{:08X}", thread_rng().gen::<u32>());
-
-        // Generate 32 bytes (256 bits) of random data for value
-        let mut value = [0u8; 32];
-        thread_rng().fill(&mut value);
-        let token_value = STANDARD.encode(value);
-
-        // Combine into final token
-        let token = format!("{}:{}", token_id, token_value);
-        Self::new(token).await
     }
 
     pub async fn is_expired(&self) -> bool {

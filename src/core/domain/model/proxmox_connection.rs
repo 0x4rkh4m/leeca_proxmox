@@ -12,6 +12,7 @@ pub struct ProxmoxConnection {
     proxmox_password: ProxmoxPassword,
     proxmox_realm: ProxmoxRealm,
     proxmox_secure: bool, // TODO: Make this a value object (or force only https)
+    proxmox_accept_invalid_certs: bool,
     proxmox_url: ProxmoxUrl,
 }
 
@@ -23,6 +24,7 @@ impl ProxmoxConnection {
         proxmox_password: ProxmoxPassword,
         proxmox_realm: ProxmoxRealm,
         proxmox_secure: bool,
+        proxmox_accept_invalid_certs: bool,
     ) -> ProxmoxResult<Self> {
         let url = ProxmoxUrl::new(&proxmox_host, &proxmox_port, &proxmox_secure).await?;
         Ok(Self {
@@ -32,6 +34,7 @@ impl ProxmoxConnection {
             proxmox_password,
             proxmox_realm,
             proxmox_secure,
+            proxmox_accept_invalid_certs,
             proxmox_url: url,
         })
     }
@@ -58,6 +61,10 @@ impl ProxmoxConnection {
 
     pub fn is_connection_secure(&self) -> &bool {
         &self.proxmox_secure
+    }
+
+    pub fn accepts_invalid_certs(&self) -> bool {
+        self.proxmox_accept_invalid_certs
     }
 
     pub fn proxmox_url(&self) -> &ProxmoxUrl {

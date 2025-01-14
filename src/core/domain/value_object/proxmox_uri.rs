@@ -94,7 +94,9 @@ impl ProxmoxUrlConfig {
     }
 
     fn is_valid_api_path(&self, path: &str) -> bool {
-        self.allowed_paths.contains(path)
+        self.allowed_paths.iter().any(|allowed_path| {
+            path == allowed_path || path.starts_with(&format!("{}/", allowed_path))
+        })
     }
 }
 

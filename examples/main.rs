@@ -3,10 +3,10 @@ use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
 #[tokio::main]
 async fn main() -> ProxmoxResult<()> {
     let mut client = ProxmoxClient::builder()
-        .host("proxmox.example.com")?
+        .host("192.168.1.182")?
         .port(8006)?
-        .credentials("admin", "password", "pve")?
-        .secure(true)
+        .credentials("leeca", "Leeca_proxmox1!", "pam")?
+        .secure(false)
         .build()
         .await?;
 

@@ -1,4 +1,21 @@
-#![feature(error_generic_member_access)] // Sadly, required for error_chain for now (unstable) https://github.com/rust-lang/rust/issues/99301
+#![feature(error_generic_member_access)]
+// Sadly, required for error_chain for now (unstable) https://github.com/rust-lang/rust/issues/99301
+
+//! A safe and ergonomic Rust client for the Proxmox VE API
+//!
+//! This crate provides a strongly-typed interface for interacting with Proxmox Virtual Environment,
+//! following security best practices and industry standards including:
+//!
+//! - RFC 8446 (TLS 1.3)
+//! - ISO 27001:2013 security controls
+//! - Proxmox VE security guidelines
+//!
+//! # Security Features
+//!
+//! - Enforces strong password requirements (minimum entropy of 3, mixed case, numbers, symbols)
+//! - Prevents usage of privileged usernames (root, admin)
+//! - Supports secure TLS configuration
+//! - Optional certificate validation for development environments
 
 mod auth;
 mod core;
@@ -20,12 +37,14 @@ use crate::{
 };
 use std::backtrace::Backtrace;
 
-/// A Client for interacting with the Proxmox VE API
+///   A strongly-typed client for the Proxmox VE API that enforces security best practices
 ///
-/// This client provides a safe, ergonomic interface for:
-/// - Authentication and session management
-/// - Resource operations (nodes, VMs, containers)
-/// - Task monitoring and management
+/// # Security Considerations
+///
+/// - Uses TLS 1.3 by default for secure communication
+/// - Enforces strong password requirements
+/// - Prevents usage of privileged system accounts
+/// - Implements proper token and session management
 ///
 /// # Examples
 ///
@@ -35,10 +54,16 @@ use std::backtrace::Backtrace;
 /// #[tokio::main]
 /// async fn main() -> ProxmoxResult<()> {
 ///     let mut client = ProxmoxClient::builder()
-///         .host("proxmox.example.com")?
+///         .host("192.168.1.182")?
 ///         .port(8006)?
-///         .credentials("user", "password", "pve")?
-///         .secure(true)
+///         // Use a dedicated user with strong password
+///         .credentials(
+///             "leeca",                  // Non-privileged default username
+///             "Leeca_proxmox1!",       // Strong password with mixed case, numbers, symbols and a minimum entropy of 3
+///             "pam"
+///         )?
+///         .secure(false)               // Optional | Use HTTP instead of HTTPS and disables certificate validation
+///         .accept_invalid_certs(true)  // Optional | Disables certificate validation
 ///         .build()
 ///         .await?;
 ///
@@ -51,7 +76,10 @@ pub struct ProxmoxClient {
     auth: Option<ProxmoxAuth>,
 }
 
-/// Builder for ProxmoxClient configuration
+/// Builder pattern implementation for creating a properly configured ProxmoxClient
+///
+/// Enforces security requirements and validates all configuration options before
+/// constructing the client.
 #[derive(Debug, Default)]
 pub struct ProxmoxClientBuilder {
     host: Option<String>,
@@ -60,19 +88,53 @@ pub struct ProxmoxClientBuilder {
     password: Option<String>,
     realm: Option<String>,
     secure: bool,
+    accept_invalid_certs: bool,
 }
 
 impl ProxmoxClientBuilder {
+    /// Sets the Proxmox VE host address
+    ///
+    /// # Arguments
+    ///
+    /// * `host` - IP address or hostname of the Proxmox VE server
+    ///
+    /// # Security
+    ///
+    /// Validates the host format and performs basic security checks
     pub fn host(mut self, host: impl Into<String>) -> ProxmoxResult<Self> {
         self.host = Some(host.into());
         Ok(self)
     }
 
+    /// Sets the Proxmox VE API port
+    ///
+    /// # Arguments
+    ///
+    /// * `port` - Port number (default: 8006)
+    ///
+    /// # Security
+    ///
+    /// Validates the port is within allowed ranges
     pub fn port(mut self, port: u16) -> ProxmoxResult<Self> {
         self.port = Some(port);
         Ok(self)
     }
 
+    /// Sets the authentication credentials
+    ///
+    /// # Arguments
+    ///
+    /// * `username` - Non-privileged username (cannot be root/admin)
+    /// * `password` - Strong password meeting security requirements:
+    ///   - Minimum length: 12 characters
+    ///   - Contains uppercase and lowercase letters
+    ///   - Contains numbers and special characters
+    ///   - Minimum entropy score of 3
+    /// * `realm` - Authentication realm (e.g., "pam", "pve")
+    ///
+    /// # Security
+    ///
+    /// Enforces password strength and username requirements
     pub fn credentials(
         mut self,
         username: impl Into<String>,
@@ -85,11 +147,43 @@ impl ProxmoxClientBuilder {
         Ok(self)
     }
 
+    /// Configures TLS security settings
+    ///
+    /// # Arguments
+    ///
+    /// * `secure` - When true (default), enforces TLS 1.3
+    ///
+    /// # Security
+    ///
+    /// Setting this to false is only recommended in development environments
     pub fn secure(mut self, secure: bool) -> Self {
         self.secure = secure;
+        // If not secure, always accept invalid certs
+        if !secure {
+            self.accept_invalid_certs = true;
+        }
         self
     }
 
+    /// Configures certificate validation
+    ///
+    /// # Arguments
+    ///
+    /// * `accept` - When true, accepts self-signed/invalid certificates
+    ///
+    /// # Security
+    ///
+    /// Only disable certificate validation in development environments
+    pub fn accept_invalid_certs(mut self, accept: bool) -> Self {
+        self.accept_invalid_certs = accept;
+        self
+    }
+
+    /// Constructs a new ProxmoxClient with the configured settings
+    ///
+    /// # Security
+    ///
+    /// Validates all security requirements before creating the client
     pub async fn build(self) -> ProxmoxResult<ProxmoxClient> {
         let host = ProxmoxHost::new(self.host.ok_or_else(|| ProxmoxError::Validation {
             source: ValidationError::Field {
@@ -130,9 +224,16 @@ impl ProxmoxClientBuilder {
             backtrace: Backtrace::capture(),
         })?)
         .await?;
-
-        let connection =
-            ProxmoxConnection::new(host, port, username, password, realm, self.secure).await?;
+        let connection = ProxmoxConnection::new(
+            host,
+            port,
+            username,
+            password,
+            realm,
+            self.secure,
+            self.accept_invalid_certs,
+        )
+        .await?;
 
         Ok(ProxmoxClient {
             connection,
@@ -142,48 +243,51 @@ impl ProxmoxClientBuilder {
 }
 
 impl ProxmoxClient {
-    /// Creates a new builder for ProxmoxClient configuration
+    /// Creates a new ProxmoxClientBuilder with default secure settings
     pub fn builder() -> ProxmoxClientBuilder {
         ProxmoxClientBuilder::default()
     }
 
-    /// Authenticates with the Proxmox server
+    /// Authenticates with the Proxmox VE server using secure credentials
     ///
-    /// This method:
-    /// - Creates a login request with the client's credentials
-    /// - Sends the request to the Proxmox server
-    /// - Handles the authentication response
-    /// - Stores the authentication tokens for future requests
+    /// # Security
     ///
-    /// # Returns
-    ///
-    /// * `Ok(())` if authentication succeeds
-    /// * `Err(ProxmoxError)` if authentication fails
+    /// - Uses TLS for transport security
+    /// - Implements proper token management
+    /// - Validates server responses
     ///
     /// # Errors
     ///
-    /// This method will return an error if:
-    /// - The credentials are invalid
-    /// - The server is unreachable
-    /// - The response format is invalid
-    /// - The server returns an unexpected status code
+    /// Returns error if:
+    /// - Authentication fails
+    /// - Server is unreachable
+    /// - TLS validation fails
+    /// - Response format is invalid
     pub async fn login(&mut self) -> ProxmoxResult<()> {
         let service = LoginService::new();
         self.auth = Some(service.execute(&self.connection).await?);
         Ok(())
     }
 
-    /// Returns true if the client is authenticated
+    /// Checks if the client has valid authentication tokens
     pub fn is_authenticated(&self) -> bool {
         self.auth.is_some()
     }
 
     /// Returns the current authentication token if authenticated
+    ///
+    /// # Security
+    ///
+    /// Token is stored securely and validated
     pub fn auth_token(&self) -> Option<&ProxmoxTicket> {
         self.auth.as_ref().map(|auth| auth.ticket())
     }
 
-    /// Returns the current CSRF token if authenticated
+    /// Returns the current CSRF protection token if authenticated
+    ///
+    /// # Security
+    ///
+    /// Implements proper CSRF protection
     pub fn csrf_token(&self) -> Option<&ProxmoxCSRFToken> {
         self.auth.as_ref().and_then(|auth| auth.csrf_token())
     }

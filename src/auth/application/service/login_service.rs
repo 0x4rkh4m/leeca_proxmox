@@ -14,7 +14,6 @@ use reqwest::{
 use std::backtrace::Backtrace;
 
 pub struct LoginService {
-    http_client: Client,
     default_headers: HeaderMap,
 }
 
@@ -24,16 +23,17 @@ impl LoginService {
         default_headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
         default_headers.insert(ACCEPT, "application/json".parse().unwrap());
 
-        Self {
-            http_client: Client::new(),
-            default_headers,
-        }
+        Self { default_headers }
     }
 
     pub async fn execute(&self, connection: &ProxmoxConnection) -> ProxmoxResult<ProxmoxAuth> {
+        let http_client = Client::builder()
+            .danger_accept_invalid_certs(connection.accepts_invalid_certs())
+            .build()
+            .map_err(|e| ProxmoxError::Connection(e.to_string()))?;
         let url = self.build_login_url(connection).await?;
         let request = self.build_login_request(connection).await?;
-        let response = self.send_request(&url, &request).await?;
+        let response = self.send_request(&http_client, &url, &request).await?;
 
         match response.status() {
             StatusCode::OK => self.handle_successful_login(response).await,
@@ -83,10 +83,11 @@ impl LoginService {
 
     async fn send_request(
         &self,
+        client: &Client,
         url: &str,
         request: &LoginRequest,
     ) -> ProxmoxResult<reqwest::Response> {
-        self.http_client
+        client
             .post(url)
             .headers(self.default_headers.clone())
             .json(request)
@@ -103,8 +104,8 @@ impl LoginService {
             ProxmoxError::Connection(format!("Failed to parse login response: {}", e))
         })?;
 
-        let ticket = ProxmoxTicket::new(login_response.ticket).await?;
-        let csrf_token = ProxmoxCSRFToken::new(login_response.csrf_token).await?;
+        let ticket = ProxmoxTicket::new(login_response.data.ticket).await?;
+        let csrf_token = ProxmoxCSRFToken::new(login_response.data.csrf_token).await?;
 
         ProxmoxAuth::new(ticket, Some(csrf_token)).await
     }
