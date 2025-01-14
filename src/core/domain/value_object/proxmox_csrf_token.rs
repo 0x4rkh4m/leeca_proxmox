@@ -116,12 +116,20 @@ impl ProxmoxCSRFToken {
         Ok(token)
     }
 
+    pub async fn value(&self) -> String {
+        self.as_inner().await
+    }
+
     pub async fn is_expired(&self) -> bool {
         let config = Self::validation_config();
         SystemTime::now()
             .duration_since(self.created_at)
             .map(|age| age > config.token_lifetime)
             .unwrap_or(true)
+    }
+
+    pub async fn expires_at(&self) -> SystemTime {
+        self.created_at + Self::validation_config().token_lifetime
     }
 
     pub async fn as_header(&self) -> String {

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ## [0.1.1] - 2025-01-14
+### Added
+- Public `value()` method for ProxmoxTicket and ProxmoxCSRFToken
+- Public `expires_at()` method for token expiration time access
+- Enhanced token lifetime visibility and management
+
 ### Changed
 - Removed base64 validation requirement for CSRF tokens to match Proxmox VE API format
 - Updated LoginResponse structure to properly handle Proxmox API response format

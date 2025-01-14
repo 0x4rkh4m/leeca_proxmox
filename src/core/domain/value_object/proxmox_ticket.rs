@@ -155,8 +155,16 @@ impl ProxmoxTicket {
         Ok(ticket)
     }
 
+    pub async fn value(&self) -> String {
+        self.as_inner().await
+    }
+
     pub async fn is_expired(&self) -> bool {
         Self::validation_config().is_expired(self.created_at)
+    }
+
+    pub async fn expires_at(&self) -> SystemTime {
+        self.created_at + Self::validation_config().ticket_lifetime
     }
 
     pub async fn as_cookie_header(&self) -> String {
