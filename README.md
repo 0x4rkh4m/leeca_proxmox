@@ -43,7 +43,9 @@ A modern, safe, and async-first SDK for interacting with Proxmox Virtual Environ
 
 ### Installation
 
+```
 cargo add leeca_proxmox
+```
 
 ### Quick Example
 
