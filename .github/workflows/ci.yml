@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
@@ -91,4 +92,4 @@ jobs:
       - name: Publish to crates.io
         run: cargo publish --token ${CARGO_REGISTRY_TOKEN}
         env:
-          CRATES_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
