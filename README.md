@@ -43,12 +43,7 @@ A modern, safe, and async-first SDK for interacting with Proxmox Virtual Environ
 
 ### Installation
 
-<!-- TODO: Make documentation version dynamic -->
-Add to your `Cargo.toml`:
-```toml
-[dependencies]
-leeca_proxmox = "0.1.0"
-```
+cargo add leeca_proxmox
 
 ### Quick Example
 
