@@ -333,12 +333,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_builder() {
-        setup();
-
         if !has_proxmox_config() {
             println!("Skipping integration test - no Proxmox configuration");
             return;
         }
+
+        setup();
 
         let client = setup_client().await;
         assert!(client.is_ok());
@@ -346,12 +346,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_authentication() {
-        setup();
-
         if !has_proxmox_config() {
             println!("Skipping integration test - no Proxmox configuration");
             return;
         }
+
+        setup();
 
         let mut client = setup_client().await.unwrap();
         assert!(!client.is_authenticated());
