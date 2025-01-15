@@ -304,43 +304,70 @@ impl ProxmoxClient {
     }
 }
 
-// TBD: See how to test this without actually connecting to a Proxmox server
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dotenvy::dotenv;
+    use std::env;
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
+    fn setup() {
+        dotenv().ok();
+    }
 
-//     #[tokio::test]
-//     async fn test_client_builder() {
-//         let client = ProxmoxClient::builder()
-//             .host("localhost")
-//             .unwrap()
-//             .port(8006)
-//             .unwrap()
-//             .credentials("user", "password", "pve")
-//             .unwrap()
-//             .secure(false)
-//             .build()
-//             .await;
+    async fn setup_client() -> ProxmoxResult<ProxmoxClient> {
+        dotenv().ok();
 
-//         assert!(client.is_ok());
-//     }
+        ProxmoxClient::builder()
+            .host(env::var("PROXMOX_HOST").unwrap())?
+            .port(env::var("PROXMOX_PORT").unwrap().parse().unwrap())?
+            .credentials(
+                env::var("PROXMOX_USERNAME").unwrap(),
+                env::var("PROXMOX_PASSWORD").unwrap(),
+                env::var("PROXMOX_REALM").unwrap(),
+            )?
+            .secure(true)
+            .accept_invalid_certs(true)
+            .build()
+            .await
+    }
 
-//     #[tokio::test]
-//     async fn test_client_authentication() {
-//         let mut client = ProxmoxClient::builder()
-//             .host("proxmox.example.com")
-//             .unwrap()
-//             .credentials("user", "password", "pve")
-//             .unwrap()
-//             .build()
-//             .await
-//             .unwrap();
+    #[tokio::test]
+    async fn test_client_builder() {
+        setup();
 
-//         assert!(!client.is_authenticated());
+        if !has_proxmox_config() {
+            println!("Skipping integration test - no Proxmox configuration");
+            return;
+        }
 
-//         let login_result = client.login().await;
-//         assert!(login_result.is_ok());
-//         assert!(client.is_authenticated());
-//     }
-// }
+        let client = setup_client().await;
+        assert!(client.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_client_authentication() {
+        setup();
+
+        if !has_proxmox_config() {
+            println!("Skipping integration test - no Proxmox configuration");
+            return;
+        }
+
+        let mut client = setup_client().await.unwrap();
+        assert!(!client.is_authenticated());
+
+        let login_result = client.login().await;
+        assert!(login_result.is_ok());
+        assert!(client.is_authenticated());
+    }
+
+    // Temporal workaround until github actions secrets are available
+    // and running remote Proxmox VE for ci testing
+    fn has_proxmox_config() -> bool {
+        env::var("PROXMOX_HOST").is_ok()
+            && env::var("PROXMOX_PORT").is_ok()
+            && env::var("PROXMOX_USERNAME").is_ok()
+            && env::var("PROXMOX_PASSWORD").is_ok()
+            && env::var("PROXMOX_REALM").is_ok()
+    }
+}

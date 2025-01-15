@@ -21,14 +21,16 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/) specifica
 - 💄 style: Changes that do not affect the meaning of the code
 - ♻️ refactor: A code change that neither fixes a bug nor adds a feature
 - ⚡️ perf: A code change that improves performance
-- 🧪 test: Adding missing tests or correcting existing tests
+- 🧺 test: Adding missing tests or correcting existing tests
 - 🔧 chore: Changes to the build process or auxiliary tools
 
 ### Examples
 
+```bash
 git commit -m "✨ feat(auth): add login functionality"
 git commit -m "🐛 fix(validation): handle empty host names"
 git commit -m "📚 docs(readme): update installation instructions"
+```
 
 ## Development Process
 
@@ -36,11 +38,13 @@ git commit -m "📚 docs(readme): update installation instructions"
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
 4. Run tests and lints
-```
-cargo test
-cargo clippy
-cargo fmt --all -- --check
-```
+
+   ```bash
+   cargo test
+   cargo clippy
+   cargo fmt --all -- --check
+   ```
+
 5. Commit your changes following our convention
 6. Push to your fork
 7. Open a Pull Request
@@ -48,20 +52,23 @@ cargo fmt --all -- --check
 ## Pull Request Process
 
 1. Update documentation if needed
-2. Update CHANGELOG.md following semantic versioning
+2. Update `CHANGELOG.md` following semantic versioning
 3. Ensure CI passes
 4. Get review from maintainers
 
 ## Development Setup
 
-```
+```bash
 # Clone your fork
 git clone https://github.com/<your-username>/leeca-proxmox.git
 
 # Add upstream remote
 git remote add upstream https://github.com/original/leeca-proxmox.git
 
-# Install dependencies
+# Install development dependencies
+cargo install cargo-llvm-cov cargo-audit
+
+# Install project dependencies
 cargo build
 ```
 
@@ -70,3 +77,5 @@ cargo build
 - Write tests for all new features
 - Maintain or improve code coverage
 - Run the full test suite before submitting
+
+To run tests, you need to set up the `.env` file with the values from the [example](.env.example) targeting to a real testing instance of Proxmox VE.

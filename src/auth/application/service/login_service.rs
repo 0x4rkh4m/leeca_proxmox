@@ -117,98 +117,115 @@ impl Default for LoginService {
     }
 }
 
-// TBD: See how to test this without actually connecting to a Proxmox server
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ProxmoxHost, ProxmoxPassword, ProxmoxPort, ProxmoxRealm, ProxmoxUsername};
+    use dotenvy::dotenv;
+    use std::env;
+    use tokio::time::{timeout, Duration};
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::{ProxmoxHost, ProxmoxPassword, ProxmoxPort, ProxmoxRealm, ProxmoxUsername};
-//     use mockall::predicate::*;
-//     use serde_json::json;
-//     use wiremock::{matchers::method, matchers::path, Mock, MockServer, ResponseTemplate};
+    async fn setup_connection() -> ProxmoxResult<ProxmoxConnection> {
+        dotenv().ok();
 
-//     #[tokio::test]
-//     async fn test_login_success() {
-//         let mock_server = MockServer::start().await;
-//         let connection = create_test_connection(&mock_server.uri()).await;
+        ProxmoxConnection::new(
+            ProxmoxHost::new(env::var("PROXMOX_HOST").unwrap()).await?,
+            ProxmoxPort::new(env::var("PROXMOX_PORT").unwrap().parse().unwrap()).await?,
+            ProxmoxUsername::new(env::var("PROXMOX_USERNAME").unwrap()).await?,
+            ProxmoxPassword::new(env::var("PROXMOX_PASSWORD").unwrap()).await?,
+            ProxmoxRealm::new(env::var("PROXMOX_REALM").unwrap()).await?,
+            false,
+            true,
+        )
+        .await
+    }
 
-//         Mock::given(method("POST"))
-//             .and(path("/api2/json/access/ticket"))
-//             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-//                 "ticket": "PVE:testuser@pve:8ABC1234::validticketstring",
-//                 "csrf_token": "8ABC1234:dGhpc2lzYXZhbGlkdG9rZW5mb3J0ZXN0aW5nYmFzZTY0ZW5jb2Rpbmc="
-//             })))
-//             .expect(1)
-//             .mount(&mock_server)
-//             .await;
+    #[tokio::test]
+    async fn test_login_success() {
+        if !has_proxmox_config() {
+            println!("Skipping integration test - no Proxmox configuration");
+            return;
+        }
 
-//         let service = LoginService::new();
-//         let result = service.execute(&connection).await;
-//         assert!(result.is_ok());
-//     }
+        let connection = setup_connection().await.unwrap();
+        let service = LoginService::new();
 
-//     #[tokio::test]
-//     async fn test_login_invalid_credentials() {
-//         let mock_server = MockServer::start().await;
-//         let connection = create_test_connection(&mock_server.uri()).await;
+        let result = service.execute(&connection).await;
+        assert!(result.is_ok());
 
-//         Mock::given(method("POST"))
-//             .and(path("/api2/json/access/ticket"))
-//             .respond_with(
-//                 ResponseTemplate::new(401)
-//                     .set_body_json(json!({
-//                         "errors": {
-//                             "message": "Invalid username or password"
-//                         }
-//                     }))
-//                     .insert_header("content-type", "application/json"),
-//             )
-//             .expect(1)
-//             .mount(&mock_server)
-//             .await;
+        let auth = result.unwrap();
+        assert!(auth.ticket().value().await.starts_with("PVE:"));
+        assert!(auth.csrf_token().is_some());
+    }
 
-//         let service = LoginService::new();
-//         let result = service.execute(&connection).await;
+    #[tokio::test]
+    async fn test_login_invalid_credentials() {
+        if !has_proxmox_config() {
+            println!("Skipping integration test - no Proxmox configuration");
+            return;
+        }
 
-//         assert!(matches!(result, Err(ProxmoxError::Authentication(_))));
-//     }
+        let mut connection = setup_connection().await.unwrap();
+        // Override with invalid password
+        connection = ProxmoxConnection::new(
+            connection.proxmox_host().clone(),
+            connection.proxmox_port().clone(),
+            connection.proxmox_username().clone(),
+            ProxmoxPassword::new("InvalidPassword123!".to_string())
+                .await
+                .unwrap(),
+            connection.proxmox_realm().clone(),
+            false,
+            true,
+        )
+        .await
+        .unwrap();
 
-//     #[tokio::test]
-//     async fn test_login_server_error() {
-//         let mock_server = MockServer::start().await;
-//         let connection = create_test_connection(&mock_server.uri()).await;
+        let service = LoginService::new();
+        let result = service.execute(&connection).await;
+        assert!(matches!(result, Err(ProxmoxError::Authentication(_))));
+    }
 
-//         Mock::given(method("POST"))
-//             .and(path("/api2/json/access/ticket"))
-//             .respond_with(ResponseTemplate::new(503).set_body_json(json!({
-//                 "errors": {
-//                     "message": "Service temporarily unavailable"
-//                 }
-//             })))
-//             .mount(&mock_server)
-//             .await;
+    #[tokio::test]
+    async fn test_login_invalid_endpoint() {
+        if !has_proxmox_config() {
+            println!("Skipping integration test - no Proxmox configuration");
+            return;
+        }
 
-//         let service = LoginService::new();
-//         let result = service.execute(&connection).await;
-//         assert!(matches!(result, Err(ProxmoxError::Connection(_))));
-//     }
+        let connection = setup_connection().await.unwrap();
+        let service = LoginService::new();
 
-//     async fn create_test_connection(base_url: &str) -> ProxmoxConnection {
-//         let url = url::Url::parse(base_url).unwrap();
-//         let host = url.host_str().unwrap_or("localhost").to_string();
-//         let port = url.port().unwrap_or(8006);
+        let invalid_connection = ProxmoxConnection::new(
+            ProxmoxHost::new("1.1.1.1".to_string()).await.unwrap(),
+            connection.proxmox_port().clone(),
+            connection.proxmox_username().clone(),
+            connection.proxmox_password().clone(),
+            connection.proxmox_realm().clone(),
+            false,
+            true,
+        )
+        .await
+        .unwrap();
 
-//         ProxmoxConnection::new(
-//             ProxmoxHost::create(host),
-//             ProxmoxPort::create(port),
-//             ProxmoxUsername::new("test-user".to_string()).await.unwrap(),
-//             ProxmoxPassword::new("TestPassword123!".to_string())
-//                 .await
-//                 .unwrap(),
-//             ProxmoxRealm::new("pam".to_string()).await.unwrap(),
-//             false,
-//         )
-//         .await
-//         .unwrap()
-//     }
-// }
+        // Wrap the service execution with a 5-second timeout
+        // for the case where the endpoint is unreachable
+        let result = timeout(Duration::from_secs(5), service.execute(&invalid_connection)).await;
+
+        assert!(match result {
+            Ok(Err(ProxmoxError::Connection(_))) => true,
+            Err(_elapsed) => true,
+            _ => false,
+        });
+    }
+
+    // Temporal workaround until github actions secrets are available
+    // and running remote Proxmox VE for ci testing
+    fn has_proxmox_config() -> bool {
+        env::var("PROXMOX_HOST").is_ok()
+            && env::var("PROXMOX_PORT").is_ok()
+            && env::var("PROXMOX_USERNAME").is_ok()
+            && env::var("PROXMOX_PASSWORD").is_ok()
+            && env::var("PROXMOX_REALM").is_ok()
+    }
+}
