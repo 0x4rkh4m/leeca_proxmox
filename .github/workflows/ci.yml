@@ -42,8 +42,11 @@ jobs:
           dig +short ${{ secrets.PROXMOX_HOST }} > /dev/null
 
           echo "Testing HTTPS connectivity"
-          response=$(curl -skI https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }})
-          if [[ $response == *"200"* ]] || [[ $response == *"403"* ]] || [[ $response == *"401"* ]]; then
+          response=$(curl -sk -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"${{ secrets.PROXMOX_USERNAME }}\",\"password\":\"${{ secrets.PROXMOX_PASSWORD }}\",\"realm\":\"${{ secrets.PROXMOX_REALM }}\"}" \
+            "https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }}/api2/json/access/ticket" -w "%{http_code}")
+          if [[ $response == *"200"* ]] ; then
             echo "Connection successful"
           else
             echo "Connection failed"
