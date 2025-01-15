@@ -13,21 +13,6 @@ env:
   NODE_TLS_REJECT_UNAUTHORIZED: "0"
 
 jobs:
-  cloudflare-setup:
-    name: Cloudflare Setup
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup Cloudflare WARP
-        uses: oHTGo/setup-cloudflare-warp-action@master
-        with:
-          organization: ${{ secrets.CLOUDFLARE_ORGANIZATION }}
-          auth_client_id: ${{ secrets.CLOUDFLARE_CLIENT_ID }}
-          auth_client_secret: ${{ secrets.CLOUDFLARE_CLIENT_SECRET }}
-      - name: Verify WARP connection
-        run: |
-          warp-cli status
-          curl -s https://www.cloudflare.com/cdn-cgi/trace | grep warp
-
   check:
     name: Check
     runs-on: ubuntu-latest
