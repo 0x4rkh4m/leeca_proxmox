@@ -42,11 +42,8 @@ jobs:
           dig +short ${{ secrets.PROXMOX_HOST }} > /dev/null
 
           echo "Testing HTTPS connectivity"
-          response=$(curl -sk -X POST \
-            -H "Content-Type: application/json" \
-            -d "{\"username\":\"${{ secrets.PROXMOX_USERNAME }}\",\"password\":\"${{ secrets.PROXMOX_PASSWORD }}\",\"realm\":\"${{ secrets.PROXMOX_REALM }}\"}" \
-            "https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }}/api2/json/access/ticket" -w "%{http_code}")
-          if [[ $response == *"200"* ]] ; then
+          response=$(curl -skI https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }})
+          if [[ $response == *"200"* ]] || [[ $response == *"403"* ]] || [[ $response == *"401"* ]]; then
             echo "Connection successful"
           else
             echo "Connection failed"
@@ -56,9 +53,11 @@ jobs:
       - name: Test authentication endpoint
         run: |
           auth_response=$(curl -sk -X POST \
-            -H "Content-Type: application/json" \
-            -d "{\"username\":\"${{ secrets.PROXMOX_USERNAME }}\",\"password\":\"${{ secrets.PROXMOX_PASSWORD }}\",\"realm\":\"${{ secrets.PROXMOX_REALM }}\"}" \
-            "https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }}/api2/json/access/ticket")
+                    -H "Content-Type: application/x-www-form-urlencoded" \
+                    --data-urlencode "username=${{ secrets.PROXMOX_USERNAME }}" \
+                    --data-urlencode "password=${{ secrets.PROXMOX_PASSWORD }}" \
+                    --data-urlencode "realm=${{ secrets.PROXMOX_REALM }}" \
+                    "https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }}/api2/json/access/ticket")
 
           if echo "$auth_response" | grep -q "ticket"; then
             echo "Remote instance is reachable and accesible"
