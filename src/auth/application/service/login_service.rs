@@ -212,11 +212,10 @@ mod tests {
         // for the case where the endpoint is unreachable
         let result = timeout(Duration::from_secs(5), service.execute(&invalid_connection)).await;
 
-        assert!(match result {
-            Ok(Err(ProxmoxError::Connection(_))) => true,
-            Err(_elapsed) => true,
-            _ => false,
-        });
+        assert!(matches!(
+            result,
+            Ok(Err(ProxmoxError::Connection(_))) | Err(_)
+        ));
     }
 
     // Temporal workaround until github actions secrets are available

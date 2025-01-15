@@ -27,12 +27,12 @@ jobs:
   test:
     name: Test Suite
     runs-on: ubuntu-latest
-    # env:
-    #   PROXMOX_HOST: ${{ secrets.PROXMOX_HOST }}
-    #   PROXMOX_PORT: ${{ secrets.PROXMOX_PORT }}
-    #   PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
-    #   PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
-    #   PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
+    env:
+      PROXMOX_HOST: ${{ secrets.PROXMOX_HOST }}
+      PROXMOX_PORT: ${{ secrets.PROXMOX_PORT }}
+      PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
+      PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
+      PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
@@ -43,12 +43,12 @@ jobs:
   coverage:
     name: Code coverage
     runs-on: ubuntu-latest
-    # env:
-    #   PROXMOX_HOST: ${{ secrets.PROXMOX_HOST }}
-    #   PROXMOX_PORT: ${{ secrets.PROXMOX_PORT }}
-    #   PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
-    #   PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
-    #   PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
+    env:
+      PROXMOX_HOST: ${{ secrets.PROXMOX_HOST }}
+      PROXMOX_PORT: ${{ secrets.PROXMOX_PORT }}
+      PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
+      PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
+      PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
