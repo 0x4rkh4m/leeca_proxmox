@@ -32,15 +32,21 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
-      RUST_BACKTRACE: "1"
     steps:
       - name: Test DNS resolution and HTTPS connectivity
         run: |
           echo "Testing DNS resolution"
-          dig ${{ secrets.PROXMOX_HOST }}
+          dig +short ${{ secrets.PROXMOX_HOST }} > /dev/null
 
           echo "Testing HTTPS connectivity"
-          curl -kv https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }} 2>&1 | grep -E "Connected to|SSL connection|HTTP"
+          response=$(curl -skI https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }})
+          if [[ $response == *"200"* ]] || [[ $response == *"403"* ]] || [[ $response == *"401"* ]]; then
+            echo "Connection successful"
+            exit 0
+          else
+            echo "Connection failed"
+            exit 1
+          fi
 
   test:
     name: Test Suite
