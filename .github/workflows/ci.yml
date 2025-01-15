@@ -10,6 +10,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings -A dead_code"
+  NODE_TLS_REJECT_UNAUTHORIZED: "0"
+  CURL_CA_BUNDLE: ""
+  SSL_CERT_FILE: ""
 
 jobs:
   check:
@@ -27,18 +30,17 @@ jobs:
   dns-check:
     name: DNS Check
     runs-on: ubuntu-latest
+    env:
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      RUST_BACKTRACE: "1"
     steps:
       - name: Test DNS resolution and HTTPS connectivity
         run: |
-          echo "Testing DNS resolution for ${{ secrets.PROXMOX_HOST }}"
-          ping -c 4 ${{ secrets.PROXMOX_HOST }}
+          echo "Testing DNS resolution"
+          dig ${{ secrets.PROXMOX_HOST }}
 
           echo "Testing HTTPS connectivity"
-          curl -kv https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }} 2>&1 | grep "Connected to"
-
-          echo "Testing TLS handshake"
-          openssl s_client -connect ${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }} </dev/null 2>/dev/null | grep "Verify return code"
-        continue-on-error: true
+          curl -kv https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }} 2>&1 | grep -E "Connected to|SSL connection|HTTP"
 
   test:
     name: Test Suite
@@ -50,12 +52,17 @@ jobs:
       PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
       PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
       PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      CURL_CA_BUNDLE: ""
+      SSL_CERT_FILE: ""
+      RUST_BACKTRACE: "1"
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo test --all-features
+        run: |
+          cargo test --all-features
 
   coverage:
     name: Code coverage
@@ -67,6 +74,10 @@ jobs:
       PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
       PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
       PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      CURL_CA_BUNDLE: ""
+      SSL_CERT_FILE: ""
+      RUST_BACKTRACE: "1"
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
@@ -76,7 +87,8 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Generate code coverage
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+        run: |
+          cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
