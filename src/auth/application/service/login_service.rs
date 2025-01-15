@@ -134,47 +134,47 @@ mod tests {
             ProxmoxUsername::new(env::var("PROXMOX_USERNAME").unwrap()).await?,
             ProxmoxPassword::new(env::var("PROXMOX_PASSWORD").unwrap()).await?,
             ProxmoxRealm::new(env::var("PROXMOX_REALM").unwrap()).await?,
-            false,
+            true,
             true,
         )
         .await
     }
 
-    // #[tokio::test]
-    // async fn test_login_success() {
-    //     let connection = setup_connection().await.unwrap();
-    //     let service = LoginService::new();
+    #[tokio::test]
+    async fn test_login_success() {
+        let connection = setup_connection().await.unwrap();
+        let service = LoginService::new();
 
-    //     let result = service.execute(&connection).await;
-    //     assert!(result.is_ok());
+        let result = service.execute(&connection).await;
+        assert!(result.is_ok());
 
-    //     let auth = result.unwrap();
-    //     assert!(auth.ticket().value().await.starts_with("PVE:"));
-    //     assert!(auth.csrf_token().is_some());
-    // }
+        let auth = result.unwrap();
+        assert!(auth.ticket().value().await.starts_with("PVE:"));
+        assert!(auth.csrf_token().is_some());
+    }
 
-    // #[tokio::test]
-    // async fn test_login_invalid_credentials() {
-    //     let mut connection = setup_connection().await.unwrap();
-    //     // Override with invalid password
-    //     connection = ProxmoxConnection::new(
-    //         connection.proxmox_host().clone(),
-    //         connection.proxmox_port().clone(),
-    //         connection.proxmox_username().clone(),
-    //         ProxmoxPassword::new("InvalidPassword123!".to_string())
-    //             .await
-    //             .unwrap(),
-    //         connection.proxmox_realm().clone(),
-    //         false,
-    //         true,
-    //     )
-    //     .await
-    //     .unwrap();
+    #[tokio::test]
+    async fn test_login_invalid_credentials() {
+        let mut connection = setup_connection().await.unwrap();
+        // Override with invalid password
+        connection = ProxmoxConnection::new(
+            connection.proxmox_host().clone(),
+            connection.proxmox_port().clone(),
+            connection.proxmox_username().clone(),
+            ProxmoxPassword::new("InvalidPassword123!".to_string())
+                .await
+                .unwrap(),
+            connection.proxmox_realm().clone(),
+            true,
+            true,
+        )
+        .await
+        .unwrap();
 
-    //     let service = LoginService::new();
-    //     let result = service.execute(&connection).await;
-    //     assert!(matches!(result, Err(ProxmoxError::Authentication(_))));
-    // }
+        let service = LoginService::new();
+        let result = service.execute(&connection).await;
+        assert!(matches!(result, Err(ProxmoxError::Authentication(_))));
+    }
 
     #[tokio::test]
     async fn test_login_invalid_endpoint() {
@@ -187,7 +187,7 @@ mod tests {
             connection.proxmox_username().clone(),
             connection.proxmox_password().clone(),
             connection.proxmox_realm().clone(),
-            false,
+            true,
             true,
         )
         .await
