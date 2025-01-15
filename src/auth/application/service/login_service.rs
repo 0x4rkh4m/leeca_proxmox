@@ -23,6 +23,24 @@ impl LoginService {
         default_headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
         default_headers.insert(ACCEPT, "application/json".parse().unwrap());
 
+        // Add Cloudflare Access headers if environment variables are present
+        // for CI/CD pipelines
+        if let Ok(client_id) = std::env::var("CF_ACCESS_CLIENT_ID") {
+            if !client_id.is_empty() {
+                default_headers.insert(
+                    "CF-Access-Client-Id",
+                    format!("{}.access", client_id).parse().unwrap(),
+                );
+
+                if let Ok(client_secret) = std::env::var("CF_ACCESS_CLIENT_SECRET") {
+                    if !client_secret.is_empty() {
+                        default_headers
+                            .insert("CF-Access-Client-Secret", client_secret.parse().unwrap());
+                    }
+                }
+            }
+        }
+
         Self { default_headers }
     }
 

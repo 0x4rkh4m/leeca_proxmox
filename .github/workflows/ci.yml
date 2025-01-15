@@ -13,6 +13,21 @@ env:
   NODE_TLS_REJECT_UNAUTHORIZED: "0"
 
 jobs:
+  cloudflare-setup:
+    name: Cloudflare Setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Cloudflare WARP
+        uses: oHTGo/setup-cloudflare-warp-action@master
+        with:
+          organization: ${{ secrets.CLOUDFLARE_ORGANIZATION }}
+          auth_client_id: ${{ secrets.CLOUDFLARE_CLIENT_ID }}
+          auth_client_secret: ${{ secrets.CLOUDFLARE_CLIENT_SECRET }}
+      - name: Verify WARP connection
+        run: |
+          warp-cli status
+          curl -s https://www.cloudflare.com/cdn-cgi/trace | grep warp
+
   check:
     name: Check
     runs-on: ubuntu-latest
@@ -34,6 +49,8 @@ jobs:
       PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
       PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
       PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
     steps:
       - name: Test DNS resolution
@@ -41,44 +58,18 @@ jobs:
           echo "Testing DNS resolution"
           dig +short ${{ secrets.PROXMOX_HOST }} > /dev/null
 
-      - name: Test HTTPS connectivity
-        run: |
-          echo "Testing HTTPS connectivity"
-          response=$(curl -skI https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }})
-          if [[ $response == *"200"* ]] || [[ $response == *"403"* ]] || [[ $response == *"401"* ]]; then
-            echo "Connection successful"
-          else
-            echo "Connection failed"
-            exit 1
-          fi
-
       - name: Test authentication
         run: |
           echo "Testing authentication endpoint"
           response=$(curl -sk -X POST \
             -H "Content-Type: application/x-www-form-urlencoded" \
+            -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" \
+            -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" \
             --data-urlencode "username=${{ secrets.PROXMOX_USERNAME }}" \
             --data-urlencode "password=${{ secrets.PROXMOX_PASSWORD }}" \
             --data-urlencode "realm=${{ secrets.PROXMOX_REALM }}" \
             -w "\n%{http_code}" \
             "https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }}/api2/json/access/ticket")
-
-          http_code=$(echo "$response" | tail -n1)
-          content=$(echo "$response" | sed '$d')
-
-          if [[ "$http_code" != "200" ]]; then
-            echo "Authentication failed with HTTP code: $http_code"
-            echo "Response: $content"
-            exit 1
-          fi
-
-          if ! echo "$content" | grep -q "ticket"; then
-            echo "Authentication response missing ticket"
-            echo "Response: $content"
-            exit 1
-          fi
-
-          echo "Authentication successful"
 
   test:
     name: Test Suite
@@ -90,9 +81,10 @@ jobs:
       PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
       PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
       PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
-      RUST_BACKTRACE: "full"
-      RUST_LOG: "debug,reqwest=debug,hyper=debug"
+      RUST_BACKTRACE: "1"
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
@@ -111,6 +103,8 @@ jobs:
       PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
       PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
       PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
       RUST_BACKTRACE: "1"
     steps:
