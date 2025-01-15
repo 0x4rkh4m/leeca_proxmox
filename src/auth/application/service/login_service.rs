@@ -27,11 +27,18 @@ impl LoginService {
     }
 
     pub async fn execute(&self, connection: &ProxmoxConnection) -> ProxmoxResult<ProxmoxAuth> {
+        println!("Building HTTP client with connection settings");
         let http_client = Client::builder()
             .danger_accept_invalid_certs(connection.accepts_invalid_certs())
             .build()
-            .map_err(|e| ProxmoxError::Connection(e.to_string()))?;
+            .map_err(|e| {
+                println!("Failed to build HTTP client: {}", e);
+                ProxmoxError::Connection(e.to_string())
+            })?;
+        println!("Building login URL");
         let url = self.build_login_url(connection).await?;
+        println!("URL built: {}", url);
+        println!("Building login request");
         let request = self.build_login_request(connection).await?;
         let response = self.send_request(&http_client, &url, &request).await?;
 
