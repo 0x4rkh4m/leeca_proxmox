@@ -29,9 +29,14 @@ jobs:
     name: DNS Check
     runs-on: ubuntu-latest
     env:
+      PROXMOX_HOST: ${{ secrets.PROXMOX_HOST }}
+      PROXMOX_PORT: ${{ secrets.PROXMOX_PORT }}
+      PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
+      PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
+      PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
     steps:
-      - name: Test DNS resolution and HTTPS connectivity
+      - name: Test DNS resolution and connectivity
         run: |
           echo "Testing DNS resolution"
           dig +short ${{ secrets.PROXMOX_HOST }} > /dev/null
@@ -40,9 +45,22 @@ jobs:
           response=$(curl -skI https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }})
           if [[ $response == *"200"* ]] || [[ $response == *"403"* ]] || [[ $response == *"401"* ]]; then
             echo "Connection successful"
-            exit 0
           else
             echo "Connection failed"
+            exit 1
+          fi
+
+      - name: Test authentication endpoint
+        run: |
+          auth_response=$(curl -sk -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"${{ secrets.PROXMOX_USERNAME }}\",\"password\":\"${{ secrets.PROXMOX_PASSWORD }}\",\"realm\":\"${{ secrets.PROXMOX_REALM }}\"}" \
+            "https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }}/api2/json/access/ticket")
+
+          if echo "$auth_response" | grep -q "ticket"; then
+            echo "Remote instance is reachable and accesible"
+          else
+            echo "Remote instance is not reachable or accesible"
             exit 1
           fi
 
@@ -57,14 +75,7 @@ jobs:
       PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
       PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
-      CURL_CA_BUNDLE: ""
-      SSL_CERT_FILE: ""
-      RUST_BACKTRACE: "full"
-      RUST_LOG: "debug"
-      REQWEST_CONNECT_TIMEOUT: "30"
-      REQWEST_TIMEOUT: "30"
-      HTTPS_PROXY: ""
-      HTTP_PROXY: ""
+      RUST_BACKTRACE: "1"
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
@@ -84,14 +95,7 @@ jobs:
       PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
       PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
-      CURL_CA_BUNDLE: ""
-      SSL_CERT_FILE: ""
-      RUST_BACKTRACE: "full"
-      RUST_LOG: "debug"
-      REQWEST_CONNECT_TIMEOUT: "30"
-      REQWEST_TIMEOUT: "30"
-      HTTPS_PROXY: ""
-      HTTP_PROXY: ""
+      RUST_BACKTRACE: "1"
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
