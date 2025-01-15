@@ -11,8 +11,6 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings -A dead_code"
   NODE_TLS_REJECT_UNAUTHORIZED: "0"
-  CURL_CA_BUNDLE: ""
-  SSL_CERT_FILE: ""
 
 jobs:
   check:
@@ -61,7 +59,12 @@ jobs:
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
       CURL_CA_BUNDLE: ""
       SSL_CERT_FILE: ""
-      RUST_BACKTRACE: "1"
+      RUST_BACKTRACE: "full"
+      RUST_LOG: "debug"
+      REQWEST_CONNECT_TIMEOUT: "30"
+      REQWEST_TIMEOUT: "30"
+      HTTPS_PROXY: ""
+      HTTP_PROXY: ""
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
@@ -83,7 +86,12 @@ jobs:
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
       CURL_CA_BUNDLE: ""
       SSL_CERT_FILE: ""
-      RUST_BACKTRACE: "1"
+      RUST_BACKTRACE: "full"
+      RUST_LOG: "debug"
+      REQWEST_CONNECT_TIMEOUT: "30"
+      REQWEST_TIMEOUT: "30"
+      HTTPS_PROXY: ""
+      HTTP_PROXY: ""
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
