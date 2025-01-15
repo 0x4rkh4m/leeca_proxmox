@@ -94,13 +94,25 @@ impl LoginService {
         url: &str,
         request: &LoginRequest,
     ) -> ProxmoxResult<reqwest::Response> {
-        client
+        println!("Sending request to: {}", url);
+        let response = client
             .post(url)
             .headers(self.default_headers.clone())
             .json(request)
             .send()
-            .await
-            .map_err(|e| ProxmoxError::Connection(e.to_string()))
+            .await;
+
+        match response {
+            Ok(r) => {
+                println!("Response status: {}", r.status());
+                println!("Response headers: {:?}", r.headers());
+                Ok(r)
+            }
+            Err(e) => {
+                println!("Request failed: {}", e);
+                Err(ProxmoxError::Connection(e.to_string()))
+            }
+        }
     }
 
     async fn handle_successful_login(
