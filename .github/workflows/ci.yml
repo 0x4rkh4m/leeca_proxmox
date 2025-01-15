@@ -24,8 +24,18 @@ jobs:
       - name: Check clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+  dns-check:
+    name: DNS Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test DNS resolution
+        run: |
+          ping -c 4 ${{ secrets.PROXMOX_HOST }}
+          curl -kv https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }} || true
+
   test:
     name: Test Suite
+    needs: dns-check
     runs-on: ubuntu-latest
     env:
       PROXMOX_HOST: ${{ secrets.PROXMOX_HOST }}
@@ -42,6 +52,7 @@ jobs:
 
   coverage:
     name: Code coverage
+    needs: dns-check
     runs-on: ubuntu-latest
     env:
       PROXMOX_HOST: ${{ secrets.PROXMOX_HOST }}
