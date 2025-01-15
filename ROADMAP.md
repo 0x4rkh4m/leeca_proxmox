@@ -1,6 +1,13 @@
-# ROADMAP
+## Completed Versions
 
-## Current Version (0.1.0)
+**0.1.1 (Current)**
+- ✅ Public token management methods
+- ✅ Enhanced CSRF validation
+- ✅ Improved login response handling
+- ✅ Expanded security documentation
+- ✅ Enhanced certificate validation
+
+**0.1.0**
 - ✅ Core client implementation
 - ✅ Authentication system
 - ✅ Value Objects with validation
@@ -14,33 +21,29 @@
   - Storage management
   - Network configuration
   - Node management
-
 - 🔄 Enhanced Security
-  - Certificate validation
   - Rate limiting
   - Token refresh mechanism
   - Session management
 
-## Future (0.3.0)
+## Version 0.3.0
 - 📋 Task Management
   - Task queuing
   - Progress tracking
   - Cancellation support
   - Retry mechanisms
-
 - 🔍 Monitoring
   - Resource metrics
   - Performance statistics
   - Event logging
   - Alert system
 
-## Long Term (1.0.0)
+## Version 1.0.0
 - 🌟 High-Level Features
   - Backup/restore operations
   - Cluster management
   - Template management
   - Migration tools
-
 - 🛠 Developer Experience
   - CLI tool
   - Integration examples
@@ -64,4 +67,4 @@
 - Configuration management
 - Automated testing tools
 
-Note: This roadmap is subject to change based on community feedback and project needs.
+*Note: This roadmap is subject to change based on community feedback and project needs.*

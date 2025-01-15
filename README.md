@@ -51,6 +51,7 @@ cargo add leeca_proxmox
 
 ```rust
 use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
+use std::time::UNIX_EPOCH;
 
 #[tokio::main]
 async fn main() -> ProxmoxResult<()> {
@@ -62,22 +63,57 @@ async fn main() -> ProxmoxResult<()> {
         .build()
         .await?;
 
+    println!("\n🔑 Authentication Status");
+    println!("------------------------");
+    println!(
+        "Initial state: {}",
+        if client.is_authenticated() {
+            "✅ Authenticated"
+        } else {
+            "❌ Not authenticated"
+        }
+    );
+
+    println!("\n📡 Connecting to Proxmox...");
     client.login().await?;
-    println!("Authenticated: {}", client.is_authenticated());
+    println!(
+        "Connection state: {}",
+        if client.is_authenticated() {
+            "✅ Authenticated"
+        } else {
+            "❌ Failed"
+        }
+    );
 
     if let Some(token) = client.auth_token() {
-        println!("Session Token: {}", token.value().await);
-        println!("Session Token expires at: {:?}", token.expires_at().await);
+        println!("\n🎟️  Session Token");
+        println!("------------------------");
+        println!("Value: {}", token.value().await);
+        let expires = token
+            .expires_at()
+            .await
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        println!("Expires at: {} (Unix timestamp)", expires);
     }
 
     if let Some(csrf) = client.csrf_token() {
-        println!("CSRF Token: {}", csrf.value().await);
-        println!("CSRF Token expires at: {:?}", csrf.expires_at().await);
+        println!("\n🛡️  CSRF Protection");
+        println!("------------------------");
+        println!("Token: {}", csrf.value().await);
+        let expires = csrf
+            .expires_at()
+            .await
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        println!("Expires at: {} (Unix timestamp)", expires);
     }
 
+    println!("\n✨ Connection established successfully!\n");
     Ok(())
 }
-
 ```
 
 ## Documentation
@@ -114,7 +150,7 @@ cargo clippy
 cargo fmt
 
 # Run tests with coverage
-cargo tarpaulin
+cargo tarpaulin / cargo llvm-cov
 ```
 
 ## Project Status
