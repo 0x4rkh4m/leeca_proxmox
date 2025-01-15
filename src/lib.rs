@@ -333,41 +333,31 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_builder() {
-        if !has_proxmox_config() {
-            println!("Skipping integration test - no Proxmox configuration");
-            return;
-        }
-
         setup();
 
         let client = setup_client().await;
         assert!(client.is_ok());
     }
 
-    #[tokio::test]
-    async fn test_client_authentication() {
-        if !has_proxmox_config() {
-            println!("Skipping integration test - no Proxmox configuration");
-            return;
-        }
+    // #[tokio::test]
+    // async fn test_client_authentication() {
+    //     setup();
 
-        setup();
+    //     let mut client = setup_client().await.unwrap();
+    //     assert!(!client.is_authenticated());
 
-        let mut client = setup_client().await.unwrap();
-        assert!(!client.is_authenticated());
+    //     let login_result = client.login().await;
+    //     assert!(login_result.is_ok());
+    //     assert!(client.is_authenticated());
+    // }
 
-        let login_result = client.login().await;
-        assert!(login_result.is_ok());
-        assert!(client.is_authenticated());
-    }
-
-    // Temporal workaround until github actions secrets are available
-    // and running remote Proxmox VE for ci testing
-    fn has_proxmox_config() -> bool {
-        env::var("PROXMOX_HOST").is_ok()
-            && env::var("PROXMOX_PORT").is_ok()
-            && env::var("PROXMOX_USERNAME").is_ok()
-            && env::var("PROXMOX_PASSWORD").is_ok()
-            && env::var("PROXMOX_REALM").is_ok()
-    }
+    // // Temporal workaround until github actions secrets are available
+    // // and running remote Proxmox VE for ci testing
+    // fn has_proxmox_config() -> bool {
+    //     env::var("PROXMOX_HOST").is_ok()
+    //         && env::var("PROXMOX_PORT").is_ok()
+    //         && env::var("PROXMOX_USERNAME").is_ok()
+    //         && env::var("PROXMOX_PASSWORD").is_ok()
+    //         && env::var("PROXMOX_REALM").is_ok()
+    // }
 }

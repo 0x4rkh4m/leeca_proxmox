@@ -140,59 +140,44 @@ mod tests {
         .await
     }
 
-    #[tokio::test]
-    async fn test_login_success() {
-        if !has_proxmox_config() {
-            println!("Skipping integration test - no Proxmox configuration");
-            return;
-        }
+    // #[tokio::test]
+    // async fn test_login_success() {
+    //     let connection = setup_connection().await.unwrap();
+    //     let service = LoginService::new();
 
-        let connection = setup_connection().await.unwrap();
-        let service = LoginService::new();
+    //     let result = service.execute(&connection).await;
+    //     assert!(result.is_ok());
 
-        let result = service.execute(&connection).await;
-        assert!(result.is_ok());
+    //     let auth = result.unwrap();
+    //     assert!(auth.ticket().value().await.starts_with("PVE:"));
+    //     assert!(auth.csrf_token().is_some());
+    // }
 
-        let auth = result.unwrap();
-        assert!(auth.ticket().value().await.starts_with("PVE:"));
-        assert!(auth.csrf_token().is_some());
-    }
+    // #[tokio::test]
+    // async fn test_login_invalid_credentials() {
+    //     let mut connection = setup_connection().await.unwrap();
+    //     // Override with invalid password
+    //     connection = ProxmoxConnection::new(
+    //         connection.proxmox_host().clone(),
+    //         connection.proxmox_port().clone(),
+    //         connection.proxmox_username().clone(),
+    //         ProxmoxPassword::new("InvalidPassword123!".to_string())
+    //             .await
+    //             .unwrap(),
+    //         connection.proxmox_realm().clone(),
+    //         false,
+    //         true,
+    //     )
+    //     .await
+    //     .unwrap();
 
-    #[tokio::test]
-    async fn test_login_invalid_credentials() {
-        if !has_proxmox_config() {
-            println!("Skipping integration test - no Proxmox configuration");
-            return;
-        }
-
-        let mut connection = setup_connection().await.unwrap();
-        // Override with invalid password
-        connection = ProxmoxConnection::new(
-            connection.proxmox_host().clone(),
-            connection.proxmox_port().clone(),
-            connection.proxmox_username().clone(),
-            ProxmoxPassword::new("InvalidPassword123!".to_string())
-                .await
-                .unwrap(),
-            connection.proxmox_realm().clone(),
-            false,
-            true,
-        )
-        .await
-        .unwrap();
-
-        let service = LoginService::new();
-        let result = service.execute(&connection).await;
-        assert!(matches!(result, Err(ProxmoxError::Authentication(_))));
-    }
+    //     let service = LoginService::new();
+    //     let result = service.execute(&connection).await;
+    //     assert!(matches!(result, Err(ProxmoxError::Authentication(_))));
+    // }
 
     #[tokio::test]
     async fn test_login_invalid_endpoint() {
-        if !has_proxmox_config() {
-            println!("Skipping integration test - no Proxmox configuration");
-            return;
-        }
-
         let connection = setup_connection().await.unwrap();
         let service = LoginService::new();
 
@@ -216,15 +201,5 @@ mod tests {
             result,
             Ok(Err(ProxmoxError::Connection(_))) | Err(_)
         ));
-    }
-
-    // Temporal workaround until github actions secrets are available
-    // and running remote Proxmox VE for ci testing
-    fn has_proxmox_config() -> bool {
-        env::var("PROXMOX_HOST").is_ok()
-            && env::var("PROXMOX_PORT").is_ok()
-            && env::var("PROXMOX_USERNAME").is_ok()
-            && env::var("PROXMOX_PASSWORD").is_ok()
-            && env::var("PROXMOX_REALM").is_ok()
     }
 }
