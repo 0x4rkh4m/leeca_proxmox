@@ -28,14 +28,21 @@ jobs:
     name: DNS Check
     runs-on: ubuntu-latest
     steps:
-      - name: Test DNS resolution
+      - name: Test DNS resolution and HTTPS connectivity
         run: |
+          echo "Testing DNS resolution for ${{ secrets.PROXMOX_HOST }}"
           ping -c 4 ${{ secrets.PROXMOX_HOST }}
-          curl -kv https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }} || true
+
+          echo "Testing HTTPS connectivity"
+          curl -kv https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }} 2>&1 | grep "Connected to"
+
+          echo "Testing TLS handshake"
+          openssl s_client -connect ${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }} </dev/null 2>/dev/null | grep "Verify return code"
+        continue-on-error: true
 
   test:
     name: Test Suite
-    needs: dns-check
+    needs: [check, dns-check]
     runs-on: ubuntu-latest
     env:
       PROXMOX_HOST: ${{ secrets.PROXMOX_HOST }}
@@ -52,7 +59,7 @@ jobs:
 
   coverage:
     name: Code coverage
-    needs: dns-check
+    needs: [check, dns-check]
     runs-on: ubuntu-latest
     env:
       PROXMOX_HOST: ${{ secrets.PROXMOX_HOST }}
