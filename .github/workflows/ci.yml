@@ -36,11 +36,13 @@ jobs:
       PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
     steps:
-      - name: Test DNS resolution and connectivity
+      - name: Test DNS resolution
         run: |
           echo "Testing DNS resolution"
           dig +short ${{ secrets.PROXMOX_HOST }} > /dev/null
 
+      - name: Test HTTPS connectivity
+        run: |
           echo "Testing HTTPS connectivity"
           response=$(curl -skI https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }})
           if [[ $response == *"200"* ]] || [[ $response == *"403"* ]] || [[ $response == *"401"* ]]; then
@@ -50,21 +52,33 @@ jobs:
             exit 1
           fi
 
-      - name: Test authentication endpoint
+      - name: Test authentication
         run: |
-          auth_response=$(curl -sk -X POST \
-                    -H "Content-Type: application/x-www-form-urlencoded" \
-                    --data-urlencode "username=${{ secrets.PROXMOX_USERNAME }}" \
-                    --data-urlencode "password=${{ secrets.PROXMOX_PASSWORD }}" \
-                    --data-urlencode "realm=${{ secrets.PROXMOX_REALM }}" \
-                    "https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }}/api2/json/access/ticket")
+          echo "Testing authentication endpoint"
+          response=$(curl -sk -X POST \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "username=${{ secrets.PROXMOX_USERNAME }}" \
+            --data-urlencode "password=${{ secrets.PROXMOX_PASSWORD }}" \
+            --data-urlencode "realm=${{ secrets.PROXMOX_REALM }}" \
+            -w "\n%{http_code}" \
+            "https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }}/api2/json/access/ticket")
 
-          if echo "$auth_response" | grep -q "ticket"; then
-            echo "Remote instance is reachable and accesible"
-          else
-            echo "Remote instance is not reachable or accesible"
+          http_code=$(echo "$response" | tail -n1)
+          content=$(echo "$response" | sed '$d')
+
+          if [[ "$http_code" != "200" ]]; then
+            echo "Authentication failed with HTTP code: $http_code"
+            echo "Response: $content"
             exit 1
           fi
+
+          if ! echo "$content" | grep -q "ticket"; then
+            echo "Authentication response missing ticket"
+            echo "Response: $content"
+            exit 1
+          fi
+
+          echo "Authentication successful"
 
   test:
     name: Test Suite
