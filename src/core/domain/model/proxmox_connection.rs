@@ -5,6 +5,7 @@ use crate::core::domain::{
     value_object::proxmox_username::ProxmoxUsername,
 };
 
+#[allow(dead_code)]
 pub struct ProxmoxConnection {
     proxmox_host: ProxmoxHost,
     proxmox_port: ProxmoxPort,
@@ -16,6 +17,7 @@ pub struct ProxmoxConnection {
     proxmox_url: ProxmoxUrl,
 }
 
+#[allow(dead_code)]
 impl ProxmoxConnection {
     pub async fn new(
         proxmox_host: ProxmoxHost,
