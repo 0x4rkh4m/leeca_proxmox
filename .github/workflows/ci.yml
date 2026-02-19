@@ -81,6 +81,27 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --no-deps --all-features
 
+  # Optional: Integration tests requiring a running Proxmox instance
+  # integration-test:
+  #   name: Integration Tests
+  #   needs: [check]
+  #   runs-on: ubuntu-latest
+  #   if: ${{ secrets.PROXMOX_HOST != '' }}
+  #   env:
+  #     PROXMOX_HOST: ${{ secrets.PROXMOX_HOST }}
+  #     PROXMOX_PORT: ${{ secrets.PROXMOX_PORT }}
+  #     PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
+  #     PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
+  #     PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
+  #     CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+  #     CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@v1
+  #     - uses: Swatinem/rust-cache@v2
+  #     - name: Run integration tests
+  #       run: cargo test --all-features -- --ignored
+
   publish:
     name: Publish
     needs: [check, test, coverage, security-audit, docs]
