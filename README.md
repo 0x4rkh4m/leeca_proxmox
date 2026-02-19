@@ -11,7 +11,7 @@
 [![Downloads][downloads-shield]][downloads-url]
 [![Docs][docs-shield]][docs-url]
 [![Deps][deps-shield]][deps-url]
-[![License][license-shield]][license-url]
+[![License][license-shield]]
 [![MSRV][msrv-shield]][msrv-url]
 [![Security][security-shield]][security-url]
 
@@ -70,7 +70,7 @@ A modern, safe, and async‑first SDK for interacting with Proxmox Virtual Envir
 
 ### Prerequisites
 
-- Rust (nightly) — we use `error_generic_member_access` for backtraces, still unstable.
+- Rust
 - Cargo
 - Tokio runtime
 
@@ -188,7 +188,7 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 This project follows [Semantic Versioning](https://semver.org/). See our [CHANGELOG](CHANGELOG.md) for version history.
 
-⚠️ **Note**: APIs may change before 1.0.0. We pin MSRV to the nightly version used for development.
+⚠️ **Note**: APIs may change before 1.0.0.
 
 ## 🙏 Acknowledgments
 
@@ -225,8 +225,8 @@ This project follows [Semantic Versioning](https://semver.org/). See our [CHANGE
 [deps-shield]: https://img.shields.io/librariesio/release/cargo/leeca_proxmox?style=for-the-badge
 [deps-url]: https://deps.rs/repo/github/0x4rkh4m/leeca_proxmox
 [license-shield]: https://img.shields.io/crates/l/leeca_proxmox?style=for-the-badge
-[msrv-shield]: https://img.shields.io/badge/MSRV-nightly--2024--01--15-blue?style=for-the-badge
-[msrv-url]: https://blog.rust-lang.org/2024/01/15/Rust-nightly-2024-01-15-released.html
+[msrv-shield]: https://img.shields.io/badge/MSRV-stable--1.93.1-blue?style=for-the-badge
+[msrv-url]: https://blog.rust-lang.org/2026/02/12/Rust-1.93.1
 [security-shield]: https://img.shields.io/badge/Security-Report-green?style=for-the-badge
 
 <!-- REPOSITORY LINKS -->
