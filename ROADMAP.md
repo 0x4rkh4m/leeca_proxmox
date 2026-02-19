@@ -1,70 +1,64 @@
+# Roadmap
+
 ## Completed Versions
 
-**0.1.2 (Current)**
-- ⬆️ Updated all dependencies to latest versions (resolves security vulnerabilities)
-- 🦀 Migrated to Rust 2024 edition
-- 🧪 Improved test suite: integration tests now ignored by default (require real Proxmox instance)
-- 🤖 Implemented robust CI pipeline with:
-  - Code formatting checks
-  - Clippy linting
-  - Security audits (cargo audit)
-  - Documentation checks
-  - Code coverage reporting
-- 🔧 Added Dependabot configuration for automated dependency updates
-- 📝 Enhanced project documentation and contributing guidelines
+### 0.2.0 (Current)
+- ✅ **Validation overhaul**: All extra checks (password strength, DNS, reserved usernames) are now opt‑in, off by default.
+- ✅ **Simplified API**: Removed `ValueObject` trait and async locking; value objects are plain structs.
+- ✅ **Builder improvements**: Defaults to secure HTTPS, accepts custom `ValidationConfig`.
+- ✅ **Documentation**: Updated examples, added migration notes.
+- ✅ **CI/CD**: Full pipeline with formatting, linting, audit, coverage, and docs.
 
-**0.1.1**
-- ✅ Public token management methods
-- ✅ Enhanced CSRF validation
-- ✅ Improved login response handling
-- ✅ Expanded security documentation
-- ✅ Enhanced certificate validation
+### 0.1.2
+- ⬆️ Dependency updates and security fixes.
+- 🦀 Rust 2024 edition migration.
+- 🤖 Robust CI and Dependabot integration.
 
-**0.1.0**
-- ✅ Core client implementation
-- ✅ Authentication system
-- ✅ Value Objects with validation
-- ✅ Basic error handling
-- ✅ Async operations support
+### 0.1.1
+- ✅ Public token management.
+- ✅ Enhanced CSRF validation.
 
-## Next Release (0.2.0)
-- 🔄 Resource Management
-  - VM operations
-  - Container operations
-  - Storage management
+### 0.1.0
+- ✅ Core client and authentication.
+
+## Next Release (0.3.0)
+- 🔄 **Resource Management**
+  - VM operations (start, stop, reboot, create, delete)
+  - Container (LXC) operations
+  - Storage management (list, create, delete)
   - Network configuration
   - Node management
-- 🔄 Enhanced Security
-  - Rate limiting
+- 🔄 **Enhanced Security**
+  - Rate limiting (client‑side)
   - Token refresh mechanism
-  - Session management
+  - Session persistence
 
-## Version 0.3.0
-- 📋 Task Management
-  - Task queuing
+## Version 0.4.0
+- 📋 **Task Management**
+  - Task queuing and polling
   - Progress tracking
   - Cancellation support
   - Retry mechanisms
-- 🔍 Monitoring
-  - Resource metrics
+- 🔍 **Monitoring**
+  - Resource metrics (CPU, memory, disk, network)
   - Performance statistics
   - Event logging
-  - Alert system
+  - Alert integration
 
 ## Version 1.0.0
-- 🌟 High-Level Features
+- 🌟 **High‑Level Features**
   - Backup/restore operations
   - Cluster management
   - Template management
   - Migration tools
-- 🛠 Developer Experience
-  - CLI tool
-  - Integration examples
+- 🛠 **Developer Experience**
+  - CLI tool (optional)
+  - Comprehensive integration examples
   - Performance optimizations
   - Extended documentation
 
 ## Planned Features
-- [ ] WebSocket support for real-time updates
+- [ ] WebSocket support for real‑time updates
 - [ ] Batch operations
 - [ ] Resource pooling
 - [ ] Custom role management
@@ -74,10 +68,10 @@
 - [ ] Snapshot management
 
 ## Under Consideration
-- Integration with other virtualization platforms
-- GUI tools
+- Integration with other virtualization platforms (Proxmox Backup Server, oVirt)
+- GUI tools (TUI)
 - Plugin system
-- Configuration management
-- Automated testing tools
+- Configuration management helpers
+- Automated testing against a live Proxmox cluster
 
 *Note: This roadmap is subject to change based on community feedback and project needs.*

@@ -877,7 +877,6 @@ version = "0.1.2"
 dependencies = [
  "async-trait",
  "dotenvy",
- "futures",
  "mockall",
  "reqwest",
  "serde",

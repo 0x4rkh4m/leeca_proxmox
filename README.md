@@ -15,7 +15,7 @@
 [![MSRV][msrv-shield]][msrv-url]
 [![Security][security-shield]][security-url]
 
-A modern, safe, and async-first SDK for interacting with Proxmox Virtual Environment servers, following industry best practices and clean architecture principles.
+A modern, safe, and async‑first SDK for interacting with Proxmox Virtual Environment servers.
 
 <div align="center">
 <p align="center">
@@ -51,109 +51,86 @@ A modern, safe, and async-first SDK for interacting with Proxmox Virtual Environ
 
 ## ✨ Features
 
-- 🔒 **Enterprise-Grade Security**
-  - Token-based authentication
-  - Comprehensive input validation
-  - Secure default configurations
-  - Thread-safe operations
-  - Built-in SSL/TLS support
+- 🔒 **Secure by default**  
+  TLS 1.3, optional certificate validation, token‑based authentication.
 
-- 🚀 **Modern Architecture**
-  - Async-first design using Tokio
-  - Clean Architecture principles
-  - Domain-Driven Design
-  - SOLID principles
-  - Immutable Value Objects
+- ⚙️ **Configurable validation**  
+  Password strength, DNS resolution, reserved usernames – all opt‑in, off by default.
 
-- 💪 **Robust Error Handling**
-  - Type-safe error propagation
-  - Detailed error contexts
-  - Stack traces for debugging
-  - Custom error types
-  - Validation error handling
+- 🧱 **Clean architecture**  
+  Domain‑driven design with value objects, clear separation of concerns.
+
+- ⚡ **Async/await**  
+  Built on Tokio for high concurrency.
+
+- 🧾 **Error handling**  
+  Detailed, type‑safe errors with backtraces.
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-- Rust (nightly)  <!-- Right now, we are using nightly for #[backtrace] not being stable yet -->
+- Rust (nightly) — we use `error_generic_member_access` for backtraces, still unstable.
 - Cargo
 - Tokio runtime
 
 ### Installation
 
+Add the dependency to your `Cargo.toml`:
+
 ```bash
 cargo add leeca_proxmox
 ```
 
+Or edit `Cargo.toml` manually:
+
+```toml
+[dependencies]
+leeca_proxmox = "0.2"
+tokio = { version = "1", features = ["full"] }
+```
+
 ## 📖 Usage
+
+Basic authentication example:
 
 ```rust
 use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
-use std::time::UNIX_EPOCH;
 
 #[tokio::main]
 async fn main() -> ProxmoxResult<()> {
     let mut client = ProxmoxClient::builder()
-        .host("192.168.1.182")?
-        .port(8006)?
-        .credentials("leeca", "Leeca_proxmox1!", "pam")?
-        .secure(false)
+        .host("192.168.1.100")
+        .port(8006)
+        .credentials("apiuser", "strong-password", "pam")
+        .secure(true)                     // HTTPS (default)
+        .accept_invalid_certs(false)      // reject invalid certificates (default)
         .build()
         .await?;
 
-    println!("\n🔑 Authentication Status");
-    println!("------------------------");
-    println!(
-        "Initial state: {}",
-        if client.is_authenticated() {
-            "✅ Authenticated"
-        } else {
-            "❌ Not authenticated"
-        }
-    );
-
-    println!("\n📡 Connecting to Proxmox...");
     client.login().await?;
-    println!(
-        "Connection state: {}",
-        if client.is_authenticated() {
-            "✅ Authenticated"
-        } else {
-            "❌ Failed"
-        }
-    );
+    println!("Authenticated! Ticket: {}", client.auth_token().unwrap().as_str());
 
-    if let Some(token) = client.auth_token() {
-        println!("\n🎟️  Session Token");
-        println!("------------------------");
-        println!("Value: {}", token.value().await);
-        let expires = token
-            .expires_at()
-            .await
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        println!("Expires at: {} (Unix timestamp)", expires);
-    }
-
-    if let Some(csrf) = client.csrf_token() {
-        println!("\n🛡️  CSRF Protection");
-        println!("------------------------");
-        println!("Token: {}", csrf.value().await);
-        let expires = csrf
-            .expires_at()
-            .await
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        println!("Expires at: {} (Unix timestamp)", expires);
-    }
-
-    println!("\n✨ Connection established successfully!\n");
     Ok(())
 }
 ```
+
+### Enabling extra validation
+
+By default, only basic format checks are performed. To enable additional checks:
+
+```rust
+let client = ProxmoxClient::builder()
+    .host("...")
+    .credentials("user", "pass", "pam")
+    .enable_password_strength(3)          // require zxcvbn score ≥ 3
+    .enable_dns_resolution()               // verify hostname resolves
+    .block_reserved_usernames()            // reject root, admin, etc.
+    .build()
+    .await?;
+```
+
+See the [examples](examples/) directory for more.
 
 ## 🛠️ Development
 
@@ -182,7 +159,7 @@ See our [CHANGELOG](CHANGELOG.md) for version history and [ROADMAP](ROADMAP.md) 
 ## 📚 Documentation
 
 - [Crate Documentation](https://docs.rs/leeca_proxmox)
-- [Architecture Guide](docs/architecture.md) <!-- TODO: Add architecture guide -->
+- [Architecture Guide](docs/architecture.md) (coming soon)
 - [Examples](examples/)
 
 ## 🛡️ Security
@@ -191,7 +168,7 @@ See our [Security Policy](SECURITY.md) for reporting vulnerabilities.
 
 ## 📄 License
 
-Licensed under Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+Licensed under Apache License 2.0 – see the [LICENSE](LICENSE) file for details.
 
 ## 🤝 Contributing
 
@@ -211,19 +188,19 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 This project follows [Semantic Versioning](https://semver.org/). See our [CHANGELOG](CHANGELOG.md) for version history.
 
-⚠️ **Note**: This project is in active development. APIs may change before 1.0.0 release.
+⚠️ **Note**: APIs may change before 1.0.0. We pin MSRV to the nightly version used for development.
 
 ## 🙏 Acknowledgments
 
-- Proxmox VE team for their excellent API documentation
-- Rust community for their tools and crates
-- All [contributors](https://github.com/0x4rkh4m/leeca_proxmox/graphs/contributors)
+- Proxmox VE team for their excellent API documentation.
+- Rust community for the tools and crates.
+- All [contributors](https://github.com/0x4rkh4m/leeca_proxmox/graphs/contributors).
 
 ---
 
 <div align="center">
 
-<sub>Built with ❤️ by <a href="[repo-url]"><strong>Leeca Team</strong></a> && <a href="[rust-community-url]"><strong>Rust Community</strong></a></sub>
+<sub>Built with ❤️ by <a href="https://github.com/0x4rkh4m">4rkh4m</a> and the Rust community.</sub>
 
 <br/>
 
@@ -252,16 +229,8 @@ This project follows [Semantic Versioning](https://semver.org/). See our [CHANGE
 [msrv-url]: https://blog.rust-lang.org/2024/01/15/Rust-nightly-2024-01-15-released.html
 [security-shield]: https://img.shields.io/badge/Security-Report-green?style=for-the-badge
 
-<!-- RUST LINKS -->
-[rust-community-url]: https://www.rust-lang.org/community
-
 <!-- REPOSITORY LINKS -->
 [repo-url]: https://github.com/0x4rkh4m/leeca_proxmox
-[issues-url]: https://github.com/0x4rkh4m/leeca_proxmox/issues
-[discussions-url]: https://github.com/0x4rkh4m/leeca_proxmox/discussions
-[changelog-url]: CHANGELOG.md
-[license-url]: LICENSE
-[contributing-url]: CONTRIBUTING.md
-[security-url]: SECURITY.md
 [bug-url]: https://github.com/0x4rkh4m/leeca_proxmox/issues/new?labels=bug&template=bug_report.md
 [feature-url]: https://github.com/0x4rkh4m/leeca_proxmox/issues/new?labels=enhancement&template=feature_request.md
+[security-url]: SECURITY.md

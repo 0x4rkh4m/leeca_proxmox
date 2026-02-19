@@ -1,75 +1,88 @@
-use crate::core::domain::{
-    error::ProxmoxResult, value_object::proxmox_host::ProxmoxHost,
-    value_object::proxmox_password::ProxmoxPassword, value_object::proxmox_port::ProxmoxPort,
-    value_object::proxmox_realm::ProxmoxRealm, value_object::proxmox_uri::ProxmoxUrl,
-    value_object::proxmox_username::ProxmoxUsername,
+use crate::core::domain::value_object::{
+    ProxmoxHost, ProxmoxPassword, ProxmoxPort, ProxmoxRealm, ProxmoxUrl, ProxmoxUsername,
 };
 
-#[allow(dead_code)]
+/// Connection details for a Proxmox server.
+///
+/// This struct holds all validated configuration needed to connect.
+/// Fields are private; access is via getters.
+#[derive(Debug, Clone)]
 pub struct ProxmoxConnection {
-    proxmox_host: ProxmoxHost,
-    proxmox_port: ProxmoxPort,
-    proxmox_username: ProxmoxUsername,
-    proxmox_password: ProxmoxPassword,
-    proxmox_realm: ProxmoxRealm,
-    proxmox_secure: bool, // TODO: Make this a value object (or force only https)
-    proxmox_accept_invalid_certs: bool,
-    proxmox_url: ProxmoxUrl,
+    host: ProxmoxHost,
+    port: ProxmoxPort,
+    username: ProxmoxUsername,
+    password: ProxmoxPassword,
+    realm: ProxmoxRealm,
+    secure: bool,
+    accept_invalid_certs: bool,
+    url: ProxmoxUrl,
 }
 
-#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
 impl ProxmoxConnection {
-    pub async fn new(
-        proxmox_host: ProxmoxHost,
-        proxmox_port: ProxmoxPort,
-        proxmox_username: ProxmoxUsername,
-        proxmox_password: ProxmoxPassword,
-        proxmox_realm: ProxmoxRealm,
-        proxmox_secure: bool,
-        proxmox_accept_invalid_certs: bool,
-    ) -> ProxmoxResult<Self> {
-        let url = ProxmoxUrl::new(&proxmox_host, &proxmox_port, &proxmox_secure).await?;
-        Ok(Self {
-            proxmox_host,
-            proxmox_port,
-            proxmox_username,
-            proxmox_password,
-            proxmox_realm,
-            proxmox_secure,
-            proxmox_accept_invalid_certs,
-            proxmox_url: url,
-        })
+    /// Creates a new connection instance (internal use only, values are already validated).
+    pub(crate) fn new(
+        host: ProxmoxHost,
+        port: ProxmoxPort,
+        username: ProxmoxUsername,
+        password: ProxmoxPassword,
+        realm: ProxmoxRealm,
+        secure: bool,
+        accept_invalid_certs: bool,
+        url: ProxmoxUrl,
+    ) -> Self {
+        Self {
+            host,
+            port,
+            username,
+            password,
+            realm,
+            secure,
+            accept_invalid_certs,
+            url,
+        }
     }
 
-    pub fn proxmox_host(&self) -> &ProxmoxHost {
-        &self.proxmox_host
+    /// Returns the host.
+    #[allow(dead_code)] // Part of public API, not yet used internally.
+    pub fn host(&self) -> &ProxmoxHost {
+        &self.host
     }
 
-    pub fn proxmox_port(&self) -> &ProxmoxPort {
-        &self.proxmox_port
+    /// Returns the port.
+    #[allow(dead_code)] // Part of public API, not yet used internally.
+    pub fn port(&self) -> &ProxmoxPort {
+        &self.port
     }
 
-    pub fn proxmox_username(&self) -> &ProxmoxUsername {
-        &self.proxmox_username
+    /// Returns the username.
+    pub fn username(&self) -> &ProxmoxUsername {
+        &self.username
     }
 
-    pub fn proxmox_password(&self) -> &ProxmoxPassword {
-        &self.proxmox_password
+    /// Returns the password.
+    pub fn password(&self) -> &ProxmoxPassword {
+        &self.password
     }
 
-    pub fn proxmox_realm(&self) -> &ProxmoxRealm {
-        &self.proxmox_realm
+    /// Returns the realm.
+    pub fn realm(&self) -> &ProxmoxRealm {
+        &self.realm
     }
 
-    pub fn is_connection_secure(&self) -> &bool {
-        &self.proxmox_secure
+    /// Returns whether HTTPS is used.
+    #[allow(dead_code)] // Part of public API, not yet used internally.
+    pub fn is_secure(&self) -> bool {
+        self.secure
     }
 
-    pub fn accepts_invalid_certs(&self) -> bool {
-        self.proxmox_accept_invalid_certs
+    /// Returns whether invalid certificates are accepted.
+    pub fn accept_invalid_certs(&self) -> bool {
+        self.accept_invalid_certs
     }
 
-    pub fn proxmox_url(&self) -> &ProxmoxUrl {
-        &self.proxmox_url
+    /// Returns the base URL.
+    pub fn url(&self) -> &ProxmoxUrl {
+        &self.url
     }
 }
