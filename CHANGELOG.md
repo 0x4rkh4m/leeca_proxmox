@@ -1,4 +1,5 @@
 # Changelog
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
@@ -6,38 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.1] - 2025-01-14
+## [0.2.0] - 2026-02-19
+
 ### Added
-- Public `value()` method for ProxmoxTicket and ProxmoxCSRFToken
-- Public `expires_at()` method for token expiration time access
-- Enhanced token lifetime visibility and management
+- **Validation configuration**: Password strength, DNS resolution, reserved usernames – all optional and off by default.
+- **Simplified value objects**: Removed `ValueObject` trait and async locking; values are now plain structs with synchronous getters.
+- **Builder improvements**: `ProxmoxClientBuilder` now defaults to secure HTTPS, and accepts a custom `ValidationConfig`.
+- **New methods**: `ProxmoxClient::is_ticket_expired()`, `is_csrf_expired()` for easy expiry checks.
+- **Documentation**: Expanded examples and migration guide for 0.1.x users.
 
 ### Changed
-- Removed base64 validation requirement for CSRF tokens to match Proxmox VE API format
-- Updated LoginResponse structure to properly handle Proxmox API response format
-- Improved error handling in login service
-- Enhanced documentation with security best practices and examples
-- Updated builder pattern documentation with detailed security considerations
+- **MSRV**: Now requires nightly (still) but the edition is updated to 2024.
+- **API**: All validation now happens at build time, reducing async noise and improving ergonomics.
+- **Error messages**: More descriptive validation errors.
 
-### Fixed
-- Fixed CSRF token validation to accept Proxmox VE format
-- Fixed login response parsing to handle nested data structure
-- Fixed API path validation to support sub-paths in ProxmoxUrl
+### Removed
+- **`ValueObject` trait**: No longer needed; each value object has its own `new_unchecked` constructor.
+- **`into_inner` methods**: Not used; can be added later if required.
 
 ### Security
-- Improved certificate validation controls
-- Enhanced security documentation for TLS and certificate handling
-- Added detailed warnings for development-only security options
+- Password strength checking is now opt‑in (default off) to respect server‑side policies.
+- DNS resolution is opt‑in; avoids blocking on build.
+
+## [0.1.2] - 2026-02-19
+### Added
+- Dependabot configuration for automated dependency updates.
+- Code coverage reporting via Codecov.
+- Robust CI pipeline (formatting, linting, audit, docs, tests).
+
+### Changed
+- Updated all dependencies to latest versions (resolves RUSTSEC advisories).
+- Migrated to Rust 2024 edition.
+- Integration tests now ignored by default; require real Proxmox instance.
+
+## [0.1.1] - 2025-01-14
+### Added
+- Public `value()` and `expires_at()` methods for tickets and CSRF tokens.
+- Enhanced token lifetime visibility.
+
+### Fixed
+- CSRF token validation to match Proxmox VE format.
+- Login response parsing.
 
 ## [0.1.0] - 2025-01-13
 ### Added
-- Project structure
-- Basic client implementation
-- Core domain models
-- Authentication flow
-- Initial documentation
-- Initial SDK implementation
-- Authentication support
-- Value Objects for domain entities
-- Async operations support
-- Comprehensive test suite
+- Initial release with core authentication, value objects, and async support.
