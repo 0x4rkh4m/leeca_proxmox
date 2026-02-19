@@ -177,6 +177,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires running Proxmox instance"]
     async fn test_login_success() {
         let connection = setup_connection().await.unwrap();
         let service = LoginService::new();
@@ -190,6 +191,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires running Proxmox instance"]
     async fn test_login_invalid_credentials() {
         let mut connection = setup_connection().await.unwrap();
         // Override with invalid password
@@ -213,6 +215,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires running Proxmox instance"]
     async fn test_login_invalid_endpoint() {
         let connection = setup_connection().await.unwrap();
         let service = LoginService::new();

@@ -9,133 +9,97 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings -A dead_code"
-  NODE_TLS_REJECT_UNAUTHORIZED: "0"
+  RUSTFLAGS: "-D warnings"
+  RUST_BACKTRACE: "1"
 
 jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Check clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-  dns-check:
-    name: DNS Check
-    runs-on: ubuntu-latest
-    env:
-      PROXMOX_HOST: ${{ secrets.PROXMOX_HOST }}
-      PROXMOX_PORT: ${{ secrets.PROXMOX_PORT }}
-      PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
-      PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
-      PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
-      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
-      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
-      NODE_TLS_REJECT_UNAUTHORIZED: "0"
-    steps:
-      - name: Test DNS resolution
-        run: |
-          echo "Testing DNS resolution"
-          dig +short ${{ secrets.PROXMOX_HOST }} > /dev/null
-
-      - name: Test authentication
-        run: |
-          echo "Testing authentication endpoint"
-          response=$(curl -sk -X POST \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" \
-            -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" \
-            --data-urlencode "username=${{ secrets.PROXMOX_USERNAME }}" \
-            --data-urlencode "password=${{ secrets.PROXMOX_PASSWORD }}" \
-            --data-urlencode "realm=${{ secrets.PROXMOX_REALM }}" \
-            -w "\n%{http_code}" \
-            "https://${{ secrets.PROXMOX_HOST }}:${{ secrets.PROXMOX_PORT }}/api2/json/access/ticket")
-
   test:
     name: Test Suite
-    needs: [check, dns-check]
+    needs: [check]
     runs-on: ubuntu-latest
-    env:
-      PROXMOX_HOST: ${{ secrets.PROXMOX_HOST }}
-      PROXMOX_PORT: ${{ secrets.PROXMOX_PORT }}
-      PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
-      PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
-      PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
-      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
-      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
-      NODE_TLS_REJECT_UNAUTHORIZED: "0"
-      RUST_BACKTRACE: "1"
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Run tests
-        run: |
-          cargo test --all-features
+      - name: Run unit tests
+        run: cargo test --all-features
 
   coverage:
-    name: Code coverage
-    needs: [check, dns-check]
+    name: Code Coverage
+    needs: [check]
     runs-on: ubuntu-latest
-    env:
-      PROXMOX_HOST: ${{ secrets.PROXMOX_HOST }}
-      PROXMOX_PORT: ${{ secrets.PROXMOX_PORT }}
-      PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
-      PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
-      PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
-      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
-      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
-      NODE_TLS_REJECT_UNAUTHORIZED: "0"
-      RUST_BACKTRACE: "1"
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: taiki-e/install-action@cargo-llvm-cov
       - name: Generate code coverage
-        run: |
-          cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.info
-          fail_ci_if_error: true
-      - name: Upload test results to Codecov
-        if: ${{ !cancelled() }}
-        uses: codecov/test-results-action@v1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   security-audit:
-    name: Security audit
+    name: Security Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
-      - name: Run security audit
-        run: cargo audit
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   docs:
     name: Documentation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Check documentation
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --no-deps --all-features
+
+  # Optional: Integration tests requiring a running Proxmox instance
+  # These tests are skipped by default and only run when secrets are configured
+  # integration-test:
+  #   name: Integration Tests
+  #   needs: [check]
+  #   runs-on: ubuntu-latest
+  #   if: ${{ secrets.PROXMOX_HOST != '' }}
+  #   env:
+  #     PROXMOX_HOST: ${{ secrets.PROXMOX_HOST }}
+  #     PROXMOX_PORT: ${{ secrets.PROXMOX_PORT }}
+  #     PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
+  #     PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
+  #     PROXMOX_REALM: ${{ secrets.PROXMOX_REALM }}
+  #     CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+  #     CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@stable
+  #     - uses: Swatinem/rust-cache@v2
+  #     - name: Run integration tests
+  #       run: cargo test --all-features -- --ignored
 
   publish:
     name: Publish
@@ -143,8 +107,9 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Publish to crates.io
         run: cargo publish --token ${CARGO_REGISTRY_TOKEN}
         env:

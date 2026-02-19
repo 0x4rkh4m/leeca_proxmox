@@ -3,7 +3,7 @@
 # Leeca Proxmox VE SDK
 ### Rust SDK for interacting with Proxmox Virtual Environment servers
 
-<img src="assets/leeca_logo.png" alt="Leeca SDK Logo" width="200"/>
+<img src="assets/leeca_logo.png" alt="Leeca SDK Logo" width="150"/>
 
 [![CI Status][ci-shield]][ci-url]
 [![Coverage][coverage-shield]][coverage-url]

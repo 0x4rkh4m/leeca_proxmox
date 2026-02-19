@@ -332,6 +332,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires running Proxmox instance"]
     async fn test_client_builder() {
         setup();
 
@@ -340,6 +341,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires running Proxmox instance"]
     async fn test_client_authentication() {
         setup();
 
