@@ -16,6 +16,7 @@ use tokio::sync::RwLock;
 /// - IANA Port Numbers: https://www.iana.org/assignments/service-names-port-numbers
 /// - RFC 6335: Internet Assigned Numbers Authority (IANA) Procedures
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ProxmoxPortConfig {
     min_port: u16,
     max_port: u16,
@@ -23,6 +24,7 @@ pub struct ProxmoxPortConfig {
     proxmox_specific_ports: HashSet<u16>,
 }
 
+#[allow(dead_code)]
 impl ProxmoxPortConfig {
     /// Validates a port number according to configuration rules
     async fn validate_port(&self, port: u16) -> Result<(), ValidationError> {

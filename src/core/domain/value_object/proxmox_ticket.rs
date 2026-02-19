@@ -29,6 +29,7 @@ pub struct ProxmoxTicketConfig {
     allowed_usernames: ProxmoxUsernameConfig,
 }
 
+#[allow(dead_code)]
 impl ProxmoxTicketConfig {
     async fn validate_ticket_format(&self, ticket: &str) -> Result<(), ValidationError> {
         // Basic ticket validation
@@ -78,12 +79,12 @@ impl ProxmoxTicketConfig {
         }
 
         // Validate ticket ID
-        if let Some(ticket_id) = parts.get(2) {
-            if ticket_id.len() != 8 || !ticket_id.chars().all(|c| c.is_ascii_hexdigit()) {
-                return Err(ValidationError::Format(
-                    "Invalid ticket ID format".to_string(),
-                ));
-            }
+        if let Some(ticket_id) = parts.get(2)
+            && (ticket_id.len() != 8 || !ticket_id.chars().all(|c| c.is_ascii_hexdigit()))
+        {
+            return Err(ValidationError::Format(
+                "Invalid ticket ID format".to_string(),
+            ));
         }
 
         Ok(())

@@ -1,15 +1,15 @@
 use crate::{
+    ProxmoxAuth, ProxmoxCSRFToken, ProxmoxConnection, ProxmoxError, ProxmoxResult, ProxmoxTicket,
+    ValidationError,
     auth::application::{
         request::login_request::LoginRequest, response::login_response::LoginResponse,
     },
     core::domain::value_object::base_value_object::ValueObject,
-    ProxmoxAuth, ProxmoxCSRFToken, ProxmoxConnection, ProxmoxError, ProxmoxResult, ProxmoxTicket,
-    ValidationError,
 };
 
 use reqwest::{
-    header::{HeaderMap, ACCEPT, CONTENT_TYPE},
     Client, StatusCode,
+    header::{ACCEPT, CONTENT_TYPE, HeaderMap},
 };
 use std::backtrace::Backtrace;
 
@@ -25,19 +25,18 @@ impl LoginService {
 
         // Add Cloudflare Access headers if environment variables are present
         // for CI/CD pipelines
-        if let Ok(client_id) = std::env::var("CF_ACCESS_CLIENT_ID") {
-            if !client_id.is_empty() {
-                default_headers.insert(
-                    "CF-Access-Client-Id",
-                    format!("{}.access", client_id).parse().unwrap(),
-                );
+        if let Ok(client_id) = std::env::var("CF_ACCESS_CLIENT_ID")
+            && !client_id.is_empty()
+        {
+            default_headers.insert(
+                "CF-Access-Client-Id",
+                format!("{}.access", client_id).parse().unwrap(),
+            );
 
-                if let Ok(client_secret) = std::env::var("CF_ACCESS_CLIENT_SECRET") {
-                    if !client_secret.is_empty() {
-                        default_headers
-                            .insert("CF-Access-Client-Secret", client_secret.parse().unwrap());
-                    }
-                }
+            if let Ok(client_secret) = std::env::var("CF_ACCESS_CLIENT_SECRET")
+                && !client_secret.is_empty()
+            {
+                default_headers.insert("CF-Access-Client-Secret", client_secret.parse().unwrap());
             }
         }
 
@@ -160,7 +159,7 @@ mod tests {
     use crate::{ProxmoxHost, ProxmoxPassword, ProxmoxPort, ProxmoxRealm, ProxmoxUsername};
     use dotenvy::dotenv;
     use std::env;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration, timeout};
 
     async fn setup_connection() -> ProxmoxResult<ProxmoxConnection> {
         dotenv().ok();
