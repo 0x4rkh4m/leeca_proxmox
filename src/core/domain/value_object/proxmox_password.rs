@@ -1,209 +1,92 @@
-use crate::core::domain::{
-    error::{ProxmoxResult, ValidationError},
-    value_object::base_value_object::ValueObject,
-};
-use async_trait::async_trait;
-use std::collections::HashSet;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use zxcvbn::{Score, zxcvbn};
+use crate::core::domain::error::ValidationError;
+use zxcvbn::zxcvbn;
 
-/// Represents the configuration for a Proxmox password value object
-///
-/// This configuration object encapsulates the constraints and settings
-/// for password validation according to:
-/// - NIST Special Publication 800-63B
-/// - OWASP Password Security Guidelines
-/// - Proxmox VE security requirements
+/// A Proxmox password (plaintext, only stored temporarily).
 #[derive(Debug, Clone)]
-pub struct ProxmoxPasswordConfig {
-    min_length: usize,
-    max_length: usize,
-    min_entropy_score: Score,
-    required_char_types: HashSet<CharacterType>,
-    special_chars: &'static str,
-}
-
-#[derive(Debug, Clone, Eq, Hash, PartialEq)]
-enum CharacterType {
-    Lowercase,
-    Uppercase,
-    Digit,
-    Special,
-}
-
-impl ProxmoxPasswordConfig {
-    const DEFAULT_SPECIAL_CHARS: &'static str = "~!@#$%^&*()_+-=`{}[]|\\:;\"'<>,.?/";
-    fn is_special_char(&self, c: char) -> bool {
-        self.special_chars.contains(c)
-    }
-
-    async fn validate_password(&self, password: &str) -> Result<(), ValidationError> {
-        if password.is_empty() {
-            return Err(ValidationError::Field {
-                field: "password".to_string(),
-                message: "Password cannot be empty".to_string(),
-            });
-        }
-
-        if password.len() < self.min_length || password.len() > self.max_length {
-            return Err(ValidationError::Format(format!(
-                "Password length must be between {} and {} characters",
-                self.min_length, self.max_length
-            )));
-        }
-
-        let mut found_types = HashSet::new();
-        for c in password.chars() {
-            if c.is_ascii_lowercase() {
-                found_types.insert(CharacterType::Lowercase);
-            } else if c.is_ascii_uppercase() {
-                found_types.insert(CharacterType::Uppercase);
-            } else if c.is_ascii_digit() {
-                found_types.insert(CharacterType::Digit);
-            } else if self.is_special_char(c) {
-                found_types.insert(CharacterType::Special);
-            }
-        }
-
-        let missing_types: HashSet<_> = self.required_char_types.difference(&found_types).collect();
-
-        if !missing_types.is_empty() {
-            return Err(ValidationError::ConstraintViolation(
-                "Password must contain at least one character from each required type".to_string(),
-            ));
-        }
-
-        // Evaluate password strength using zxcvbn
-        let entropy = zxcvbn(password, &[]).score();
-
-        if entropy < self.min_entropy_score {
-            return Err(ValidationError::ConstraintViolation(
-                "Password is too weak".to_string(),
-            ));
-        }
-
-        Ok(())
-    }
-}
-
-impl Default for ProxmoxPasswordConfig {
-    fn default() -> Self {
-        let mut required_types = HashSet::new();
-        required_types.insert(CharacterType::Lowercase);
-        required_types.insert(CharacterType::Uppercase);
-        required_types.insert(CharacterType::Digit);
-        required_types.insert(CharacterType::Special);
-
-        Self {
-            min_length: 8,
-            max_length: 64,
-            min_entropy_score: Score::Three,
-            required_char_types: required_types,
-            special_chars: Self::DEFAULT_SPECIAL_CHARS,
-        }
-    }
-}
-
-/// Represents a validated Proxmox password
-///
-/// This value object ensures passwords comply with:
-/// - NIST security guidelines
-/// - OWASP password requirements
-/// - Proxmox VE security standards
-#[derive(Debug, Clone)]
-pub struct ProxmoxPassword {
-    value: Arc<RwLock<String>>,
-}
+pub struct ProxmoxPassword(String);
 
 impl ProxmoxPassword {
-    pub async fn new(password: String) -> ProxmoxResult<Self> {
-        <Self as ValueObject>::new(password).await
+    /// Creates a new password without validation.
+    pub(crate) fn new_unchecked(password: String) -> Self {
+        Self(password)
+    }
+
+    /// Returns the password as a string slice.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consumes the object and returns the inner string.
+    #[allow(unused)]
+    pub fn into_inner(self) -> String {
+        self.0
     }
 }
 
-#[async_trait]
-impl ValueObject for ProxmoxPassword {
-    type Value = String;
-    type ValidationConfig = ProxmoxPasswordConfig;
-
-    fn value(&self) -> &Arc<RwLock<Self::Value>> {
-        &self.value
+/// Validates a password according to the configuration.
+pub(crate) fn validate_password(
+    password: &str,
+    min_score: Option<zxcvbn::Score>,
+) -> Result<(), ValidationError> {
+    if password.is_empty() {
+        return Err(ValidationError::Field {
+            field: "password".to_string(),
+            message: "Password cannot be empty".to_string(),
+        });
     }
-
-    fn validation_config() -> Self::ValidationConfig {
-        ProxmoxPasswordConfig::default()
+    if password.len() < 8 {
+        return Err(ValidationError::Format(
+            "Password must be at least 8 characters long".to_string(),
+        ));
     }
-
-    async fn validate(
-        value: &Self::Value,
-        config: &Self::ValidationConfig,
-    ) -> Result<(), ValidationError> {
-        config.validate_password(value).await
+    if password.len() > 128 {
+        return Err(ValidationError::Format(
+            "Password cannot exceed 128 characters".to_string(),
+        ));
     }
-
-    fn create(value: Self::Value) -> Self {
-        Self {
-            value: Arc::new(RwLock::new(value)),
+    if let Some(min_score) = min_score {
+        let entropy = zxcvbn(password, &[]);
+        if entropy.score() < min_score {
+            return Err(ValidationError::ConstraintViolation(
+                "Password is too weak (increase complexity)".to_string(),
+            ));
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::domain::error::ProxmoxError;
+    use zxcvbn::Score;
 
-    #[tokio::test]
-    async fn test_valid_passwords() {
-        let valid_passwords = vec![
-            "Str0ng!P@ssw0rd",
-            "C0mpl3x#P@ss",
-            "Sup3r.S3cur3!2024",
-            "P@ssw0rd.With-Symb0ls",
-        ];
-
-        for password in valid_passwords {
-            let result = ProxmoxPassword::new(password.to_string()).await;
-            assert!(result.is_ok(), "Password should be valid");
-        }
+    #[test]
+    fn test_validate_password_valid() {
+        assert!(validate_password("Str0ng!P@ss", None).is_ok());
+        assert!(validate_password("password123", None).is_ok());
     }
 
-    #[tokio::test]
-    async fn test_invalid_passwords() {
-        let long_password = "a".repeat(65);
-        let test_cases = vec![
-            ("", "empty password"),
-            ("short", "too short"),
-            (long_password.as_str(), "too long"),
-            ("password123", "no uppercase or special"),
-            ("Password", "no numbers or special"),
-            ("12345678", "only numbers"),
-            ("abcdefgh", "only lowercase"),
-        ];
-
-        for (password, case) in test_cases {
-            let result = ProxmoxPassword::new(password.to_string()).await;
-            assert!(
-                matches!(result, Err(ProxmoxError::Validation { .. })),
-                "Case '{}' should fail validation: {}",
-                case,
-                password
-            );
-        }
+    #[test]
+    fn test_validate_password_invalid() {
+        assert!(validate_password("", None).is_err());
+        assert!(validate_password("short", None).is_err()); // <8
+        assert!(validate_password(&"a".repeat(129), None).is_err()); // >128
     }
 
-    #[tokio::test]
-    async fn test_password_entropy() {
-        let weak_passwords = vec!["Password123!", "Qwerty123!", "Admin123!"];
+    #[test]
+    fn test_validate_password_with_strength() {
+        let min_score = Some(Score::Three);
+        // Strong password
+        assert!(validate_password("Str0ng!P@ssw0rd", min_score).is_ok());
+        // Weak password (meets length but low entropy)
+        assert!(validate_password("password", min_score).is_err());
+        assert!(validate_password("12345678", min_score).is_err());
+    }
 
-        for password in weak_passwords {
-            let result = ProxmoxPassword::new(password.to_string()).await;
-            assert!(
-                matches!(result, Err(ProxmoxError::Validation { .. })),
-                "Common password '{}' should be rejected",
-                password
-            );
-        }
+    #[test]
+    fn test_password_new_unchecked() {
+        let pwd = ProxmoxPassword::new_unchecked("secret".to_string());
+        assert_eq!(pwd.as_str(), "secret");
     }
 }
