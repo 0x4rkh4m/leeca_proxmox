@@ -7,7 +7,7 @@
 //! By default, only basic format checks are performed to ensure the values can be used in HTTP requests.
 //!
 //! # Example
-//! ```
+//! ```no_run
 //! use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
 //!
 //! #[tokio::main]
