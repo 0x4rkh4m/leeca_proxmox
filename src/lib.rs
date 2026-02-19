@@ -332,6 +332,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires running Proxmox instance"]
     async fn test_client_builder() {
         setup();
 
@@ -339,17 +340,18 @@ mod tests {
         assert!(client.is_ok());
     }
 
-    // #[tokio::test]
-    // async fn test_client_authentication() {
-    //     setup();
+    #[tokio::test]
+    #[ignore = "requires running Proxmox instance"]
+    async fn test_client_authentication() {
+        setup();
 
-    //     let mut client = setup_client().await.unwrap();
-    //     assert!(!client.is_authenticated());
+        let mut client = setup_client().await.unwrap();
+        assert!(!client.is_authenticated());
 
-    //     let login_result = client.login().await;
-    //     assert!(login_result.is_ok());
-    //     assert!(client.is_authenticated());
-    // }
+        let login_result = client.login().await;
+        assert!(login_result.is_ok());
+        assert!(client.is_authenticated());
+    }
 
     // // Temporal workaround until github actions secrets are available
     // // and running remote Proxmox VE for ci testing

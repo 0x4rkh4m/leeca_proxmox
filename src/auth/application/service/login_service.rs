@@ -1,15 +1,15 @@
 use crate::{
+    ProxmoxAuth, ProxmoxCSRFToken, ProxmoxConnection, ProxmoxError, ProxmoxResult, ProxmoxTicket,
+    ValidationError,
     auth::application::{
         request::login_request::LoginRequest, response::login_response::LoginResponse,
     },
     core::domain::value_object::base_value_object::ValueObject,
-    ProxmoxAuth, ProxmoxCSRFToken, ProxmoxConnection, ProxmoxError, ProxmoxResult, ProxmoxTicket,
-    ValidationError,
 };
 
 use reqwest::{
-    header::{HeaderMap, ACCEPT, CONTENT_TYPE},
     Client, StatusCode,
+    header::{ACCEPT, CONTENT_TYPE, HeaderMap},
 };
 use std::backtrace::Backtrace;
 
@@ -23,15 +23,39 @@ impl LoginService {
         default_headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
         default_headers.insert(ACCEPT, "application/json".parse().unwrap());
 
+        // Add Cloudflare Access headers if environment variables are present
+        // for CI/CD pipelines
+        if let Ok(client_id) = std::env::var("CF_ACCESS_CLIENT_ID")
+            && !client_id.is_empty()
+        {
+            default_headers.insert(
+                "CF-Access-Client-Id",
+                format!("{}.access", client_id).parse().unwrap(),
+            );
+
+            if let Ok(client_secret) = std::env::var("CF_ACCESS_CLIENT_SECRET")
+                && !client_secret.is_empty()
+            {
+                default_headers.insert("CF-Access-Client-Secret", client_secret.parse().unwrap());
+            }
+        }
+
         Self { default_headers }
     }
 
     pub async fn execute(&self, connection: &ProxmoxConnection) -> ProxmoxResult<ProxmoxAuth> {
+        println!("Building HTTP client with connection settings");
         let http_client = Client::builder()
             .danger_accept_invalid_certs(connection.accepts_invalid_certs())
             .build()
-            .map_err(|e| ProxmoxError::Connection(e.to_string()))?;
+            .map_err(|e| {
+                println!("Failed to build HTTP client: {}", e);
+                ProxmoxError::Connection(e.to_string())
+            })?;
+        println!("Building login URL");
         let url = self.build_login_url(connection).await?;
+        println!("URL built: {}", url);
+        println!("Building login request");
         let request = self.build_login_request(connection).await?;
         let response = self.send_request(&http_client, &url, &request).await?;
 
@@ -87,13 +111,25 @@ impl LoginService {
         url: &str,
         request: &LoginRequest,
     ) -> ProxmoxResult<reqwest::Response> {
-        client
+        println!("Sending request to: {}", url);
+        let response = client
             .post(url)
             .headers(self.default_headers.clone())
             .json(request)
             .send()
-            .await
-            .map_err(|e| ProxmoxError::Connection(e.to_string()))
+            .await;
+
+        match response {
+            Ok(r) => {
+                println!("Response status: {}", r.status());
+                println!("Response headers: {:?}", r.headers());
+                Ok(r)
+            }
+            Err(e) => {
+                println!("Request failed: {}", e);
+                Err(ProxmoxError::Connection(e.to_string()))
+            }
+        }
     }
 
     async fn handle_successful_login(
@@ -123,7 +159,7 @@ mod tests {
     use crate::{ProxmoxHost, ProxmoxPassword, ProxmoxPort, ProxmoxRealm, ProxmoxUsername};
     use dotenvy::dotenv;
     use std::env;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration, timeout};
 
     async fn setup_connection() -> ProxmoxResult<ProxmoxConnection> {
         dotenv().ok();
@@ -134,49 +170,52 @@ mod tests {
             ProxmoxUsername::new(env::var("PROXMOX_USERNAME").unwrap()).await?,
             ProxmoxPassword::new(env::var("PROXMOX_PASSWORD").unwrap()).await?,
             ProxmoxRealm::new(env::var("PROXMOX_REALM").unwrap()).await?,
-            false,
+            true,
             true,
         )
         .await
     }
 
-    // #[tokio::test]
-    // async fn test_login_success() {
-    //     let connection = setup_connection().await.unwrap();
-    //     let service = LoginService::new();
+    #[tokio::test]
+    #[ignore = "requires running Proxmox instance"]
+    async fn test_login_success() {
+        let connection = setup_connection().await.unwrap();
+        let service = LoginService::new();
 
-    //     let result = service.execute(&connection).await;
-    //     assert!(result.is_ok());
+        let result = service.execute(&connection).await;
+        assert!(result.is_ok());
 
-    //     let auth = result.unwrap();
-    //     assert!(auth.ticket().value().await.starts_with("PVE:"));
-    //     assert!(auth.csrf_token().is_some());
-    // }
-
-    // #[tokio::test]
-    // async fn test_login_invalid_credentials() {
-    //     let mut connection = setup_connection().await.unwrap();
-    //     // Override with invalid password
-    //     connection = ProxmoxConnection::new(
-    //         connection.proxmox_host().clone(),
-    //         connection.proxmox_port().clone(),
-    //         connection.proxmox_username().clone(),
-    //         ProxmoxPassword::new("InvalidPassword123!".to_string())
-    //             .await
-    //             .unwrap(),
-    //         connection.proxmox_realm().clone(),
-    //         false,
-    //         true,
-    //     )
-    //     .await
-    //     .unwrap();
-
-    //     let service = LoginService::new();
-    //     let result = service.execute(&connection).await;
-    //     assert!(matches!(result, Err(ProxmoxError::Authentication(_))));
-    // }
+        let auth = result.unwrap();
+        assert!(auth.ticket().value().await.starts_with("PVE:"));
+        assert!(auth.csrf_token().is_some());
+    }
 
     #[tokio::test]
+    #[ignore = "requires running Proxmox instance"]
+    async fn test_login_invalid_credentials() {
+        let mut connection = setup_connection().await.unwrap();
+        // Override with invalid password
+        connection = ProxmoxConnection::new(
+            connection.proxmox_host().clone(),
+            connection.proxmox_port().clone(),
+            connection.proxmox_username().clone(),
+            ProxmoxPassword::new("InvalidPassword123!".to_string())
+                .await
+                .unwrap(),
+            connection.proxmox_realm().clone(),
+            true,
+            true,
+        )
+        .await
+        .unwrap();
+
+        let service = LoginService::new();
+        let result = service.execute(&connection).await;
+        assert!(matches!(result, Err(ProxmoxError::Authentication(_))));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires running Proxmox instance"]
     async fn test_login_invalid_endpoint() {
         let connection = setup_connection().await.unwrap();
         let service = LoginService::new();
@@ -187,7 +226,7 @@ mod tests {
             connection.proxmox_username().clone(),
             connection.proxmox_password().clone(),
             connection.proxmox_realm().clone(),
-            false,
+            true,
             true,
         )
         .await

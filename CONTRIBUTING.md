@@ -60,7 +60,7 @@ git commit -m "📚 docs(readme): update installation instructions"
 
 ```bash
 # Clone your fork
-git clone https://github.com/<your-username>/leeca-proxmox.git
+git clone https://github.com/0x4rkh4m/leeca-proxmox.git
 
 # Add upstream remote
 git remote add upstream https://github.com/original/leeca-proxmox.git

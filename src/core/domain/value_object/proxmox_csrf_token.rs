@@ -48,27 +48,25 @@ impl ProxmoxCSRFTokenConfig {
         }
 
         // Validate token ID (first part)
-        if let Some(token_id) = parts.first() {
-            if token_id.len() != self.token_id_length
-                || !token_id.chars().all(|c| c.is_ascii_hexdigit())
-            {
-                return Err(ValidationError::Format(format!(
-                    "Invalid token ID format. Must be {} hexadecimal characters",
-                    self.token_id_length
-                )));
-            }
+        if let Some(token_id) = parts.first()
+            && (token_id.len() != self.token_id_length
+                || !token_id.chars().all(|c| c.is_ascii_hexdigit()))
+        {
+            return Err(ValidationError::Format(format!(
+                "Invalid token ID format. Must be {} hexadecimal characters",
+                self.token_id_length
+            )));
         }
 
         // Validate token value (second part)
-        if let Some(token_value) = parts.get(1) {
-            if !token_value
+        if let Some(token_value) = parts.get(1)
+            && !token_value
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
-            {
-                return Err(ValidationError::Format(
-                    "Token value contains invalid characters".to_string(),
-                ));
-            }
+        {
+            return Err(ValidationError::Format(
+                "Token value contains invalid characters".to_string(),
+            ));
         }
         Ok(())
     }
@@ -178,7 +176,7 @@ impl ValueObject for ProxmoxCSRFToken {
 mod tests {
     use super::*;
     use crate::core::domain::error::ProxmoxError;
-    use tokio::time::{sleep, Duration};
+    use tokio::time::{Duration, sleep};
 
     #[tokio::test]
     async fn test_valid_tokens() {

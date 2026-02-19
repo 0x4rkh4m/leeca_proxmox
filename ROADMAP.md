@@ -1,6 +1,19 @@
 ## Completed Versions
 
-**0.1.1 (Current)**
+**0.1.2 (Current)**
+- ⬆️ Updated all dependencies to latest versions (resolves security vulnerabilities)
+- 🦀 Migrated to Rust 2024 edition
+- 🧪 Improved test suite: integration tests now ignored by default (require real Proxmox instance)
+- 🤖 Implemented robust CI pipeline with:
+  - Code formatting checks
+  - Clippy linting
+  - Security audits (cargo audit)
+  - Documentation checks
+  - Code coverage reporting
+- 🔧 Added Dependabot configuration for automated dependency updates
+- 📝 Enhanced project documentation and contributing guidelines
+
+**0.1.1**
 - ✅ Public token management methods
 - ✅ Enhanced CSRF validation
 - ✅ Improved login response handling
