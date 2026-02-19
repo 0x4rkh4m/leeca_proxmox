@@ -64,5 +64,53 @@ pub(crate) fn validate_csrf_token(token: &str) -> Result<(), ValidationError> {
             "Token ID must be 8 hexadecimal characters".to_string(),
         ));
     }
+    // Validate token value (allow base64 chars)
+    if !parts[1]
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
+    {
+        return Err(ValidationError::Format(
+            "Token value contains invalid characters".to_string(),
+        ));
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn test_validate_csrf_token_valid() {
+        let valid = "4EEC61E2:lwk7od06fa1+DcPUwBTXCcndyAY/3mKxQp5vR8sNjWuBtL9fZg==";
+        assert!(validate_csrf_token(valid).is_ok());
+    }
+
+    #[test]
+    fn test_validate_csrf_token_invalid() {
+        assert!(validate_csrf_token("").is_err());
+        assert!(validate_csrf_token("invalid").is_err()); // no colon
+        assert!(validate_csrf_token("1234567:value").is_err()); // ID too short
+        // Use a character not allowed (space)
+        assert!(validate_csrf_token("12345678:value with space").is_err());
+    }
+
+    #[test]
+    fn test_csrf_expiration() {
+        let token = ProxmoxCSRFToken::new_unchecked("4EEC61E2:value".to_string());
+        assert!(!token.is_expired(Duration::from_secs(300)));
+
+        let old_token = ProxmoxCSRFToken {
+            value: "4EEC61E2:value".to_string(),
+            created_at: SystemTime::now() - Duration::from_secs(301),
+        };
+        assert!(old_token.is_expired(Duration::from_secs(300)));
+    }
+
+    #[test]
+    fn test_csrf_as_header() {
+        let token = ProxmoxCSRFToken::new_unchecked("id:val".to_string());
+        assert_eq!(token.as_header(), "CSRFPreventionToken: id:val");
+    }
 }

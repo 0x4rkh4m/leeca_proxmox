@@ -18,7 +18,7 @@ impl ProxmoxUrl {
     }
 
     /// Consumes the object and returns the inner string.
-    #[must_use]
+    #[allow(unused)]
     pub fn into_inner(self) -> String {
         self.0
     }
@@ -34,4 +34,27 @@ pub(crate) fn validate_url(url: &str) -> Result<(), ValidationError> {
     }
     Url::parse(url).map_err(|e| ValidationError::Format(format!("Invalid URL: {}", e)))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_url_valid() {
+        assert!(validate_url("https://example.com:8006/").is_ok());
+        assert!(validate_url("http://localhost/").is_ok());
+    }
+
+    #[test]
+    fn test_validate_url_invalid() {
+        assert!(validate_url("").is_err());
+        assert!(validate_url("not a url").is_err());
+    }
+
+    #[test]
+    fn test_url_new_unchecked() {
+        let url = ProxmoxUrl::new_unchecked("https://pve:8006/".to_string());
+        assert_eq!(url.as_str(), "https://pve:8006/");
+    }
 }

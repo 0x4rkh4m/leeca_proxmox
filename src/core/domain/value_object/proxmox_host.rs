@@ -11,13 +11,13 @@ impl ProxmoxHost {
     }
 
     /// Returns the host as a string slice.
-    #[must_use]
+    #[allow(unused)]
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
     /// Consumes the object and returns the inner string.
-    #[must_use]
+    #[allow(unused)]
     pub fn into_inner(self) -> String {
         self.0
     }
@@ -55,4 +55,34 @@ pub(crate) fn validate_host(host: &str, _resolve_dns: bool) -> Result<(), Valida
     }
     // TODO: DNS resolution would go here if enabled, but it's async; we skip for now.
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_host_valid() {
+        assert!(validate_host("example.com", false).is_ok());
+        assert!(validate_host("sub.domain.co", false).is_ok());
+        assert!(validate_host("my-host123.org", false).is_ok());
+    }
+
+    #[test]
+    fn test_validate_host_invalid() {
+        assert!(validate_host("", false).is_err());
+        assert!(validate_host(&"a".repeat(254), false).is_err());
+        assert!(validate_host("-example.com", false).is_err());
+        assert!(validate_host("example-.com", false).is_err());
+        assert!(validate_host("exam ple.com", false).is_err());
+        assert!(validate_host("exam@ple.com", false).is_err());
+        assert!(validate_host(".example.com", false).is_err());
+        assert!(validate_host("example..com", false).is_err());
+    }
+
+    #[test]
+    fn test_host_new_unchecked() {
+        let host = ProxmoxHost::new_unchecked("test.com".to_string());
+        assert_eq!(host.as_str(), "test.com");
+    }
 }

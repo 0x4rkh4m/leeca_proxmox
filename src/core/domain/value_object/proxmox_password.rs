@@ -18,7 +18,7 @@ impl ProxmoxPassword {
     }
 
     /// Consumes the object and returns the inner string.
-    #[must_use]
+    #[allow(unused)]
     pub fn into_inner(self) -> String {
         self.0
     }
@@ -54,4 +54,39 @@ pub(crate) fn validate_password(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zxcvbn::Score;
+
+    #[test]
+    fn test_validate_password_valid() {
+        assert!(validate_password("Str0ng!P@ss", None).is_ok());
+        assert!(validate_password("password123", None).is_ok());
+    }
+
+    #[test]
+    fn test_validate_password_invalid() {
+        assert!(validate_password("", None).is_err());
+        assert!(validate_password("short", None).is_err()); // <8
+        assert!(validate_password(&"a".repeat(129), None).is_err()); // >128
+    }
+
+    #[test]
+    fn test_validate_password_with_strength() {
+        let min_score = Some(Score::Three);
+        // Strong password
+        assert!(validate_password("Str0ng!P@ssw0rd", min_score).is_ok());
+        // Weak password (meets length but low entropy)
+        assert!(validate_password("password", min_score).is_err());
+        assert!(validate_password("12345678", min_score).is_err());
+    }
+
+    #[test]
+    fn test_password_new_unchecked() {
+        let pwd = ProxmoxPassword::new_unchecked("secret".to_string());
+        assert_eq!(pwd.as_str(), "secret");
+    }
 }

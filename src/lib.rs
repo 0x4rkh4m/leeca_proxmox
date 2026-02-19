@@ -340,3 +340,148 @@ impl ProxmoxClient {
             .unwrap_or(true)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    mod integration;
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_builder_default_secure() {
+        let builder = ProxmoxClientBuilder::default();
+        assert!(builder.secure);
+        assert!(!builder.accept_invalid_certs);
+    }
+
+    #[tokio::test]
+    async fn test_builder_missing_host() {
+        let builder = ProxmoxClientBuilder::default()
+            .port(8006)
+            .credentials("user", "pass", "pam");
+        let err = builder.build().await.unwrap_err();
+        assert!(
+            matches!(err, ProxmoxError::Validation { source: ValidationError::Field { field, .. }, .. } if field == "host")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_builder_missing_username() {
+        let builder = ProxmoxClientBuilder::default()
+            .host("example.com")
+            .port(8006);
+        let err = builder.build().await.unwrap_err();
+        assert!(
+            matches!(err, ProxmoxError::Validation { source: ValidationError::Field { field, .. }, .. } if field == "username")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_builder_valid_minimal() {
+        let client = ProxmoxClientBuilder::default()
+            .host("example.com")
+            .port(8006)
+            .credentials("user", "password123", "pam")
+            .build()
+            .await
+            .unwrap();
+        assert!(!client.is_authenticated());
+        assert!(client.auth_token().is_none());
+        assert!(client.csrf_token().is_none());
+        // No ticket/CSRF => they are considered expired
+        assert!(client.is_ticket_expired());
+        assert!(client.is_csrf_expired());
+    }
+
+    #[tokio::test]
+    async fn test_builder_with_validation_config() {
+        let config = ValidationConfig {
+            password_min_score: Some(zxcvbn::Score::Three),
+            resolve_dns: true,
+            block_reserved_usernames: true,
+            ..Default::default()
+        };
+        // Use a password that meets length but is weak
+        let builder = ProxmoxClientBuilder::default()
+            .host("example.com")
+            .port(8006)
+            .credentials("user", "password", "pam") // length 8, weak
+            .with_validation_config(config.clone());
+        let err = builder.build().await.unwrap_err();
+        assert!(matches!(
+            err,
+            ProxmoxError::Validation {
+                source: ValidationError::ConstraintViolation(_),
+                ..
+            }
+        ));
+
+        // Now with strong password
+        let builder = ProxmoxClientBuilder::default()
+            .host("example.com")
+            .port(8006)
+            .credentials("user", "Str0ng!P@ss", "pam")
+            .with_validation_config(config);
+        assert!(builder.build().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_client_login_no_auth() {
+        let client = ProxmoxClientBuilder::default()
+            .host("example.com")
+            .port(8006)
+            .credentials("user", "password123", "pam")
+            .build()
+            .await
+            .unwrap();
+        assert!(!client.is_authenticated());
+    }
+
+    #[tokio::test]
+    async fn test_builder_enable_methods() {
+        let builder = ProxmoxClientBuilder::default()
+            .host("example.com")
+            .port(8006)
+            .credentials("root", "password", "pam") // length 8, weak password
+            .enable_password_strength(3)
+            .enable_dns_resolution()
+            .block_reserved_usernames();
+        // Should fail because password weak and username reserved
+        let err = builder.build().await.unwrap_err();
+        assert!(matches!(err, ProxmoxError::Validation { .. }));
+    }
+
+    #[test]
+    fn test_validation_config_default() {
+        let config = ValidationConfig::default();
+        assert_eq!(config.password_min_score, None);
+        assert!(!config.resolve_dns);
+        assert!(!config.block_reserved_usernames);
+        assert_eq!(config.ticket_lifetime, Duration::from_secs(7200));
+        assert_eq!(config.csrf_lifetime, Duration::from_secs(300));
+    }
+
+    // We'll test expiration methods with mocked tokens
+    #[test]
+    fn test_expiration_checks() {
+        let ticket = ProxmoxTicket::new_unchecked("PVE:ticket".to_string());
+        let csrf = ProxmoxCSRFToken::new_unchecked("id:val".to_string());
+        let auth = ProxmoxAuth::new(ticket, Some(csrf));
+        let client = ProxmoxClient {
+            connection: ProxmoxConnection::new(
+                ProxmoxHost::new_unchecked("host".to_string()),
+                ProxmoxPort::new_unchecked(8006),
+                ProxmoxUsername::new_unchecked("user".to_string()),
+                ProxmoxPassword::new_unchecked("pass".to_string()),
+                ProxmoxRealm::new_unchecked("pam".to_string()),
+                true,
+                false,
+                ProxmoxUrl::new_unchecked("https://host:8006/".to_string()),
+            ),
+            auth: Some(auth),
+            config: ValidationConfig::default(),
+        };
+        assert!(!client.is_ticket_expired());
+        assert!(!client.is_csrf_expired());
+    }
+}

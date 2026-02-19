@@ -17,7 +17,7 @@ impl ProxmoxRealm {
     }
 
     /// Consumes the object and returns the inner string.
-    #[must_use]
+    #[allow(unused)]
     pub fn into_inner(self) -> String {
         self.0
     }
@@ -45,4 +45,30 @@ pub(crate) fn validate_realm(realm: &str) -> Result<(), ValidationError> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_realm_valid() {
+        assert!(validate_realm("pam").is_ok());
+        assert!(validate_realm("pve").is_ok());
+        assert!(validate_realm("my-realm_123").is_ok());
+    }
+
+    #[test]
+    fn test_validate_realm_invalid() {
+        assert!(validate_realm("").is_err());
+        assert!(validate_realm(&"a".repeat(33)).is_err());
+        assert!(validate_realm("pam!").is_err());
+        assert!(validate_realm("realm@domain").is_err());
+    }
+
+    #[test]
+    fn test_realm_new_unchecked() {
+        let realm = ProxmoxRealm::new_unchecked("pve".to_string());
+        assert_eq!(realm.as_str(), "pve");
+    }
 }

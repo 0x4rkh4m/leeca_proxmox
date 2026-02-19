@@ -167,101 +167,150 @@ impl Default for LoginService {
 mod tests {
     use super::*;
     use crate::{
-        ProxmoxClientBuilder, ProxmoxHost, ProxmoxPassword, ProxmoxPort, ProxmoxRealm,
+        ProxmoxConnection, ProxmoxHost, ProxmoxPassword, ProxmoxPort, ProxmoxRealm, ProxmoxUrl,
         ProxmoxUsername,
     };
-    use dotenvy::dotenv;
-    use std::env;
-    use tokio::time::{Duration, timeout};
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{method, path},
+    };
 
-    fn setup_env() {
-        dotenv().ok();
-    }
-
-    async fn create_test_connection() -> ProxmoxResult<ProxmoxConnection> {
-        setup_env();
-
-        let host = ProxmoxHost::new_unchecked(env::var("PROXMOX_HOST").unwrap());
-        let port = ProxmoxPort::new_unchecked(env::var("PROXMOX_PORT").unwrap().parse().unwrap());
-        let username = ProxmoxUsername::new_unchecked(env::var("PROXMOX_USERNAME").unwrap());
-        let password = ProxmoxPassword::new_unchecked(env::var("PROXMOX_PASSWORD").unwrap());
-        let realm = ProxmoxRealm::new_unchecked(env::var("PROXMOX_REALM").unwrap());
-
-        let url_str = format!("https://{}:{}/", host.as_str(), port.get());
-        let url = crate::ProxmoxUrl::new_unchecked(url_str);
-
-        Ok(ProxmoxConnection::new(
-            host, port, username, password, realm, true, // secure
-            true, // accept_invalid_certs (for self-signed)
-            url,
-        ))
+    async fn create_test_connection(server_url: &str) -> ProxmoxConnection {
+        let host = ProxmoxHost::new_unchecked(server_url.trim_start_matches("http://").to_string());
+        let port = ProxmoxPort::new_unchecked(8006);
+        let username = ProxmoxUsername::new_unchecked("testuser".to_string());
+        let password = ProxmoxPassword::new_unchecked("testpass".to_string());
+        let realm = ProxmoxRealm::new_unchecked("pam".to_string());
+        let url = ProxmoxUrl::new_unchecked(server_url.to_string() + "/");
+        ProxmoxConnection::new(host, port, username, password, realm, false, true, url)
     }
 
     #[tokio::test]
-    #[ignore = "requires running Proxmox instance"]
-    async fn test_login_success() {
-        let connection = create_test_connection().await.unwrap();
-        let service = LoginService::new();
+    async fn test_login_service_success() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api2/json/access/ticket"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": {
+                    "ticket": "PVE:testuser@pam:4EEC61E2::rsKoApxDTLYPn6H3NNT6iP2mv",
+                    "CSRFPreventionToken": "4EEC61E2:lwk7od06fa1+DcPUwBTXCcndyAY/3mKxQp5vR8sNjWuBtL9fZg=="
+                }
+            })))
+            .mount(&mock_server)
+            .await;
 
+        let connection = create_test_connection(&mock_server.uri()).await;
+        let service = LoginService::new();
         let result = service.execute(&connection).await;
         assert!(result.is_ok());
-
         let auth = result.unwrap();
-        assert!(auth.ticket().as_str().starts_with("PVE:"));
-        assert!(auth.csrf_token().is_some());
+        assert_eq!(
+            auth.ticket().as_str(),
+            "PVE:testuser@pam:4EEC61E2::rsKoApxDTLYPn6H3NNT6iP2mv"
+        );
+        assert_eq!(
+            auth.csrf_token().unwrap().as_str(),
+            "4EEC61E2:lwk7od06fa1+DcPUwBTXCcndyAY/3mKxQp5vR8sNjWuBtL9fZg=="
+        );
     }
 
     #[tokio::test]
-    #[ignore = "requires running Proxmox instance"]
-    async fn test_login_invalid_credentials() {
-        let mut connection = create_test_connection().await.unwrap();
-        // Override with invalid password
-        let invalid_password = ProxmoxPassword::new_unchecked("InvalidPassword123!".to_string());
-        connection = ProxmoxConnection::new(
-            connection.host().clone(),
-            connection.port().clone(),
-            connection.username().clone(),
-            invalid_password,
-            connection.realm().clone(),
-            true,
-            true,
-            connection.url().clone(),
-        );
+    async fn test_login_service_unauthorized() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api2/json/access/ticket"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
 
+        let connection = create_test_connection(&mock_server.uri()).await;
         let service = LoginService::new();
         let result = service.execute(&connection).await;
         assert!(matches!(result, Err(ProxmoxError::Authentication(_))));
     }
 
     #[tokio::test]
-    #[ignore = "requires running Proxmox instance"]
-    async fn test_login_invalid_endpoint() {
-        let connection = create_test_connection().await.unwrap();
+    async fn test_login_service_bad_request() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api2/json/access/ticket"))
+            .respond_with(ResponseTemplate::new(400))
+            .mount(&mock_server)
+            .await;
+
+        let connection = create_test_connection(&mock_server.uri()).await;
         let service = LoginService::new();
+        let result = service.execute(&connection).await;
+        assert!(matches!(result, Err(ProxmoxError::Validation { .. })));
+    }
 
-        let invalid_host = ProxmoxHost::new_unchecked("1.1.1.1".to_string());
-        let invalid_url_str = format!(
-            "https://{}:{}/",
-            invalid_host.as_str(),
-            connection.port().get()
-        );
-        let invalid_url = crate::ProxmoxUrl::new_unchecked(invalid_url_str);
+    #[tokio::test]
+    async fn test_login_service_not_found() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api2/json/access/ticket"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&mock_server)
+            .await;
 
-        let invalid_connection = ProxmoxConnection::new(
-            invalid_host,
-            connection.port().clone(),
-            connection.username().clone(),
-            connection.password().clone(),
-            connection.realm().clone(),
-            true,
-            true,
-            invalid_url,
-        );
+        let connection = create_test_connection(&mock_server.uri()).await;
+        let service = LoginService::new();
+        let result = service.execute(&connection).await;
+        assert!(matches!(result, Err(ProxmoxError::Connection(_))));
+    }
 
-        let result = timeout(Duration::from_secs(5), service.execute(&invalid_connection)).await;
-        assert!(matches!(
-            result,
-            Ok(Err(ProxmoxError::Connection(_))) | Err(_)
-        ));
+    #[tokio::test]
+    async fn test_login_service_service_unavailable() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api2/json/access/ticket"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&mock_server)
+            .await;
+
+        let connection = create_test_connection(&mock_server.uri()).await;
+        let service = LoginService::new();
+        let result = service.execute(&connection).await;
+        assert!(matches!(result, Err(ProxmoxError::Connection(_))));
+    }
+
+    #[tokio::test]
+    async fn test_login_service_invalid_ticket_format() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api2/json/access/ticket"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": {
+                    "ticket": "invalid",
+                    "CSRFPreventionToken": "4EEC61E2:valid"
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let connection = create_test_connection(&mock_server.uri()).await;
+        let service = LoginService::new();
+        let result = service.execute(&connection).await;
+        assert!(matches!(result, Err(ProxmoxError::Validation { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_login_service_invalid_csrf_format() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api2/json/access/ticket"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": {
+                    "ticket": "PVE:user@pam:4EEC61E2::sig",
+                    "CSRFPreventionToken": "invalid"
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let connection = create_test_connection(&mock_server.uri()).await;
+        let service = LoginService::new();
+        let result = service.execute(&connection).await;
+        assert!(matches!(result, Err(ProxmoxError::Validation { .. })));
     }
 }

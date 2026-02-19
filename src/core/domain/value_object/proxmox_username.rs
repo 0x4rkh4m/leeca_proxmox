@@ -17,7 +17,7 @@ impl ProxmoxUsername {
     }
 
     /// Consumes the object and returns the inner string.
-    #[must_use]
+    #[allow(unused)]
     pub fn into_inner(self) -> String {
         self.0
     }
@@ -63,4 +63,48 @@ pub(crate) fn validate_username(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_username_valid() {
+        assert!(validate_username("user@pve", false).is_ok());
+        assert!(validate_username("john.doe", false).is_ok());
+        assert!(validate_username("admin", false).is_ok()); // not blocked
+        assert!(validate_username("root", true).is_err()); // blocked
+    }
+
+    #[test]
+    fn test_validate_username_invalid() {
+        assert!(validate_username("", false).is_err());
+        assert!(validate_username("ab", false).is_err()); // too short
+        assert!(validate_username(&"a".repeat(65), false).is_err()); // too long
+        assert!(validate_username("user$name", false).is_err()); // invalid char
+        assert!(validate_username("user name", false).is_err()); // space
+    }
+
+    #[test]
+    fn test_validate_username_block_reserved() {
+        let reserved = [
+            "root",
+            "admin",
+            "administrator",
+            "nobody",
+            "guest",
+            "www-data",
+        ];
+        for name in reserved {
+            assert!(validate_username(name, true).is_err());
+            assert!(validate_username(name, false).is_ok()); // not blocked
+        }
+    }
+
+    #[test]
+    fn test_username_new_unchecked() {
+        let username = ProxmoxUsername::new_unchecked("test".to_string());
+        assert_eq!(username.as_str(), "test");
+    }
 }
