@@ -1,19 +1,14 @@
-use crate::core::domain::{
-    error::ProxmoxResult, value_object::proxmox_csrf_token::ProxmoxCSRFToken,
-    value_object::proxmox_ticket::ProxmoxTicket,
-};
+use crate::core::domain::value_object::{ProxmoxCSRFToken, ProxmoxTicket};
 
+#[derive(Debug, Clone)]
 pub struct ProxmoxAuth {
     ticket: ProxmoxTicket,
     csrf_token: Option<ProxmoxCSRFToken>,
 }
 
 impl ProxmoxAuth {
-    pub async fn new(
-        ticket: ProxmoxTicket,
-        csrf_token: Option<ProxmoxCSRFToken>,
-    ) -> ProxmoxResult<Self> {
-        Ok(Self { ticket, csrf_token })
+    pub fn new(ticket: ProxmoxTicket, csrf_token: Option<ProxmoxCSRFToken>) -> Self {
+        Self { ticket, csrf_token }
     }
 
     pub fn ticket(&self) -> &ProxmoxTicket {
