@@ -115,6 +115,8 @@ async fn main() -> ProxmoxResult<()> {
 }
 ```
 
+See the [authentication example](examples/auth/login.rs) for a complete demonstration.
+
 ### Enabling extra validation
 
 By default, only basic format checks are performed. To enable additional checks:
@@ -167,6 +169,8 @@ assert!(new_client.is_authenticated().await);
 
 The session data contains the ticket and CSRF token with their creation timestamps. It is serialized as JSON. You should store it securely (e.g., encrypted at rest) because it grants access to the Proxmox API.
 
+See the [session_persistence example](examples/auth/session_persistence.rs) for a complete demonstration.
+
 ### Discovering Cluster Resources
 
 Once authenticated, you can retrieve a unified list of all resources in the cluster – including VMs, containers, storage, and nodes – using the `cluster_resources()` method. This is particularly useful for discovering which nodes contain specific VMs before performing node‑level operations.
@@ -210,6 +214,33 @@ for resource in resources {
 ```
 
 The method returns a Vec<ClusterResource> where each variant contains both common fields (like node, id, name, status) and type‑specific fields (e.g., vmid for VMs, storage for storage). This allows you to programmatically inspect your Proxmox infrastructure without hard‑coding node names.
+
+See the [cluster_resources example](examples/resources/cluster_resources.rs) for a complete demonstration.
+
+### Node Management
+
+Once authenticated, you can inspect the nodes in your cluster:
+
+```rust
+// List all nodes
+let nodes = client.nodes().await?;
+for node in nodes {
+    println!("Node: {} (status: {})", node.node, node.status);
+}
+
+// Get detailed status of a specific node
+let status = client.node_status("pve1").await?;
+println!("CPU: {:.2}%, IO Delay: {:.2}%", 
+    status.cpu * 100.0, 
+    status.wait.unwrap_or(0.0) * 100.0
+);
+
+// Get DNS configuration
+let dns = client.node_dns("pve1").await?;
+println!("DNS servers: {:?}", dns.servers);
+```
+
+See the [node_management example](examples/resources/node_management.rs) for a complete demonstration.
 
 See the [examples](examples/) directory for more.
 

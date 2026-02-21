@@ -32,7 +32,10 @@ mod auth;
 mod core;
 
 pub use crate::core::domain::error::{ProxmoxError, ProxmoxResult, ValidationError};
-pub use crate::core::domain::model::cluster_resource::ClusterResource;
+pub use crate::core::domain::model::{
+    cluster_resource::ClusterResource, node_dns::NodeDnsConfig, node_list_item::NodeListItem,
+    node_status::NodeStatus,
+};
 
 use crate::{
     auth::application::service::login_service::LoginService,
@@ -484,6 +487,108 @@ impl ProxmoxClient {
     /// ```
     pub async fn cluster_resources(&self) -> ProxmoxResult<Vec<ClusterResource>> {
         self.api_client.get("cluster/resources").await
+    }
+
+    /// Lists all nodes in the cluster.
+    ///
+    /// This method calls the `/nodes` endpoint and returns a list of nodes
+    /// with their basic information and resource usage statistics.
+    ///
+    /// # Errors
+    /// Returns [`ProxmoxError`] if the request fails or the response cannot be parsed.
+    ///
+    /// # Example
+    /// ```
+    /// # use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
+    /// # use leeca_proxmox::NodeListItem;
+    /// #
+    /// # #[tokio::main]
+    /// # async fn run() -> ProxmoxResult<()> {
+    /// # let mut client = ProxmoxClient::builder()
+    /// #     .host("example.com")
+    /// #     .port(8006)
+    /// #     .credentials("user", "pass", "pam")
+    /// #     .build().await?;
+    /// # client.login().await?;
+    /// let nodes = client.nodes().await?;
+    /// for node in nodes {
+    ///     println!("Node: {} (status: {})", node.node, node.status);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn nodes(&self) -> ProxmoxResult<Vec<NodeListItem>> {
+        self.api_client.get("nodes").await
+    }
+
+    /// Retrieves detailed status information for a specific node.
+    ///
+    /// This method calls the `/nodes/{node}/status` endpoint and returns
+    /// CPU, memory, swap, uptime, load average, and IO delay information.
+    ///
+    /// # Arguments
+    /// * `node` - The name of the node (e.g., "pve1").
+    ///
+    /// # Errors
+    /// Returns [`ProxmoxError`] if the request fails, the node doesn't exist,
+    /// or the response cannot be parsed.
+    ///
+    /// # Example
+    /// ```
+    /// # use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
+    /// # use leeca_proxmox::NodeStatus;
+    /// #
+    /// # #[tokio::main]
+    /// # async fn run() -> ProxmoxResult<()> {
+    /// # let mut client = ProxmoxClient::builder()
+    /// #     .host("example.com")
+    /// #     .port(8006)
+    /// #     .credentials("user", "pass", "pam")
+    /// #     .build().await?;
+    /// # client.login().await?;
+    /// let status = client.node_status("pve1").await?;
+    /// println!("CPU: {:.2}%, IO Delay: {:.2}%", status.cpu * 100.0, status.wait.unwrap_or(0.0) * 100.0);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn node_status(&self, node: &str) -> ProxmoxResult<NodeStatus> {
+        let path = format!("nodes/{}/status", node);
+        self.api_client.get(&path).await
+    }
+
+    /// Retrieves DNS configuration for a specific node.
+    ///
+    /// This method calls the `/nodes/{node}/dns` endpoint and returns
+    /// the DNS search domain and list of DNS servers.
+    ///
+    /// # Arguments
+    /// * `node` - The name of the node (e.g., "pve1").
+    ///
+    /// # Errors
+    /// Returns [`ProxmoxError`] if the request fails or the response cannot be parsed.
+    ///
+    /// # Example
+    /// ```
+    /// # use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
+    /// # use leeca_proxmox::NodeDnsConfig;
+    /// #
+    /// # #[tokio::main]
+    /// # async fn run() -> ProxmoxResult<()> {
+    /// # let mut client = ProxmoxClient::builder()
+    /// #     .host("example.com")
+    /// #     .port(8006)
+    /// #     .credentials("user", "pass", "pam")
+    /// #     .build().await?;
+    /// # client.login().await?;
+    /// let dns = client.node_dns("pve1").await?;
+    /// println!("Search domain: {}", dns.domain);
+    /// println!("DNS servers: {:?}", dns.servers);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn node_dns(&self, node: &str) -> ProxmoxResult<NodeDnsConfig> {
+        let path = format!("nodes/{}/dns", node);
+        self.api_client.get(&path).await
     }
 }
 
