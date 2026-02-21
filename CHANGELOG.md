@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Node management operations** – New methods for node discovery and inspection:
+  - `ProxmoxClient::nodes()` – Lists all nodes in the cluster with basic information and resource usage.
+  - `ProxmoxClient::node_status(node)` – Retrieves detailed status for a specific node, including CPU, memory, swap, load average, and IO delay (`wait`).
+  - `ProxmoxClient::node_dns(node)` – Fetches DNS configuration (search domain and servers) for a node.
+- **Domain models** – Added `NodeListItem`, `NodeStatus`, `MemoryInfo`, and `NodeDnsConfig` to represent node data.
+- **Example** – `examples/node_management.rs` demonstrates listing nodes and retrieving status/DNS.
 - **Cluster resource discovery** – New method `ProxmoxClient::cluster_resources()` that returns a list of all resources (VMs, containers, storage, nodes) in the cluster. The response is strongly typed via the `ClusterResource` enum.
 - **Domain models** – Added `ClusterResource` enum and its variants `QemuResource`, `LxcResource`, `StorageResource`, `NodeResource` to represent the different resource types returned by the `/cluster/resources` endpoint.
 - **Example** – `examples/cluster_resources.rs` demonstrates how to list and categorize cluster resources.

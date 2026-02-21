@@ -9,6 +9,7 @@
   - ✅ Token refresh mechanism
   - ✅ Session persistence
 - ✅ **Cluster resource discovery** – Unified view of all resources (VMs, containers, storage, nodes) via `/cluster/resources`.
+- ✅ **Node management** – List nodes, get node status, and retrieve DNS configuration via `/nodes`, `/nodes/{node}/status`, and `/nodes/{node}/dns` endpoints.
 - 🔄 **Resource Management** (next)
   - VM operations (start, stop, reboot, create, delete)
   - Container (LXC) operations
