@@ -6,9 +6,22 @@ use crate::{
 };
 use governor::{DefaultDirectRateLimiter, Quota};
 use reqwest::{Client, StatusCode};
+use serde::de::DeserializeOwned;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+/// Wrapper for Proxmox API responses that contain a `data` field.
+///
+/// All successful responses from the Proxmox API are wrapped in an object
+/// with a `data` field. This struct allows us to extract that inner value
+/// and return it directly to the caller.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProxmoxResponse<T> {
+    /// The actual response data.
+    data: T,
+}
 
 /// Internal HTTP client that manages authentication and provides methods to call the Proxmox API.
 ///
@@ -85,7 +98,7 @@ impl ApiClient {
     #[allow(dead_code)] // Will be used in future resource operations
     pub async fn get<T>(&self, path: &str) -> ProxmoxResult<T>
     where
-        T: serde::de::DeserializeOwned,
+        T: DeserializeOwned,
     {
         self.execute_request(reqwest::Method::GET, path, None::<&()>)
             .await
@@ -104,7 +117,7 @@ impl ApiClient {
     pub async fn post<B, T>(&self, path: &str, body: &B) -> ProxmoxResult<T>
     where
         B: serde::Serialize,
-        T: serde::de::DeserializeOwned,
+        T: DeserializeOwned,
     {
         self.execute_request(reqwest::Method::POST, path, Some(body))
             .await
@@ -123,7 +136,7 @@ impl ApiClient {
     pub async fn put<B, T>(&self, path: &str, body: &B) -> ProxmoxResult<T>
     where
         B: serde::Serialize,
-        T: serde::de::DeserializeOwned,
+        T: DeserializeOwned,
     {
         self.execute_request(reqwest::Method::PUT, path, Some(body))
             .await
@@ -140,7 +153,7 @@ impl ApiClient {
     #[allow(dead_code)] // Will be used in future resource operations
     pub async fn delete<T>(&self, path: &str) -> ProxmoxResult<T>
     where
-        T: serde::de::DeserializeOwned,
+        T: DeserializeOwned,
     {
         self.execute_request(reqwest::Method::DELETE, path, None::<&()>)
             .await
@@ -156,7 +169,7 @@ impl ApiClient {
     ) -> ProxmoxResult<T>
     where
         B: serde::Serialize,
-        T: serde::de::DeserializeOwned,
+        T: DeserializeOwned,
     {
         // Ensure we have a valid ticket (refresh if needed)
         self.ensure_authenticated().await?;
@@ -215,11 +228,12 @@ impl ApiClient {
             )));
         }
 
-        // Parse successful response
-        response
-            .json::<T>()
+        // Parse successful response, extracting the `data` field
+        let proxmox_resp = response
+            .json::<ProxmoxResponse<T>>()
             .await
-            .map_err(|e| ProxmoxError::Connection(format!("Failed to parse response: {}", e)))
+            .map_err(|e| ProxmoxError::Connection(format!("Failed to parse response: {}", e)))?;
+        Ok(proxmox_resp.data)
     }
 
     /// Retry a request after a successful token refresh. This method avoids recursion.
@@ -231,7 +245,7 @@ impl ApiClient {
     ) -> ProxmoxResult<T>
     where
         B: serde::Serialize,
-        T: serde::de::DeserializeOwned,
+        T: DeserializeOwned,
     {
         let base = self.connection.url().as_str().trim_end_matches('/');
         let url = format!("{}/api2/json/{}", base, path.trim_start_matches('/'));
@@ -268,9 +282,10 @@ impl ApiClient {
             )));
         }
 
-        response.json::<T>().await.map_err(|e| {
+        let proxmox_resp = response.json::<ProxmoxResponse<T>>().await.map_err(|e| {
             ProxmoxError::Connection(format!("Failed to parse response after refresh: {}", e))
-        })
+        })?;
+        Ok(proxmox_resp.data)
     }
 
     /// Ensures that we have a valid (non‑expired) ticket. If not, attempts to refresh.
@@ -340,14 +355,14 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/api2/json/test"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": "ok"})),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": "ok"
+            })))
             .mount(&mock_server)
             .await;
 
-        let result: serde_json::Value = client.get("test").await.unwrap();
-        assert_eq!(result["data"], "ok");
+        let result: String = client.get("test").await.unwrap();
+        assert_eq!(result, "ok");
     }
 
     #[tokio::test]
@@ -371,23 +386,23 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "data": {
                     "ticket": "PVE:testuser@pam:4EEC61E2::new_sig",
-                    "CSRFPreventionToken": "4EEC61E2:abc123"   // valid token (alphanumeric)
+                    "CSRFPreventionToken": "4EEC61E2:abc123"
                 }
             })))
             .mount(&mock_server)
             .await;
 
-        // Second GET (retry) returns 200
+        // Second GET (retry) returns 200 with data
         Mock::given(method("GET"))
             .and(path("/api2/json/test"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": "ok"})),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": "ok"
+            })))
             .mount(&mock_server)
             .await;
 
-        let result: serde_json::Value = client.get("test").await.unwrap();
-        assert_eq!(result["data"], "ok");
+        let result: String = client.get("test").await.unwrap();
+        assert_eq!(result, "ok");
 
         // Verify that new auth was stored.
         let auth = client.auth().await.unwrap();
@@ -415,7 +430,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let result: ProxmoxResult<serde_json::Value> = client.get("test").await;
+        let result: ProxmoxResult<String> = client.get("test").await;
         assert!(matches!(result, Err(ProxmoxError::Authentication(_))));
     }
 
@@ -440,17 +455,17 @@ mod tests {
         // Mock endpoint returns 200 quickly
         Mock::given(method("GET"))
             .and(path("/api2/json/test"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": "ok"})),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": "ok"
+            })))
             .expect(4) // we will send 4 requests
             .mount(&mock_server)
             .await;
 
         // Send first two requests immediately – they should pass without delay (burst)
         let start = Instant::now();
-        let req1 = client.get::<serde_json::Value>("test");
-        let req2 = client.get::<serde_json::Value>("test");
+        let req1 = client.get::<String>("test");
+        let req2 = client.get::<String>("test");
         let (res1, res2) = tokio::join!(req1, req2);
         res1.unwrap();
         res2.unwrap();
@@ -459,8 +474,8 @@ mod tests {
 
         // Send third and fourth requests – they should be delayed to respect the 2/sec rate
         let start = Instant::now();
-        let req3 = client.get::<serde_json::Value>("test");
-        let req4 = client.get::<serde_json::Value>("test");
+        let req3 = client.get::<String>("test");
+        let req4 = client.get::<String>("test");
         let (res3, res4) = tokio::join!(req3, req4);
         res3.unwrap();
         res4.unwrap();
@@ -484,19 +499,50 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/api2/json/test"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": "ok"})),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": "ok"
+            })))
             .expect(10)
             .mount(&mock_server)
             .await;
 
         let start = time::Instant::now();
         for _ in 0..10 {
-            client.get::<serde_json::Value>("test").await.unwrap();
+            client.get::<String>("test").await.unwrap();
         }
         let elapsed = start.elapsed();
         // Should be very fast (no delays)
         assert!(elapsed < Duration::from_millis(500));
+    }
+
+    #[tokio::test]
+    async fn test_post_with_body() {
+        let mock_server = MockServer::start().await;
+        let connection = create_test_connection(&mock_server.uri());
+        let config = ValidationConfig::default();
+        let client = ApiClient::new(connection, config).unwrap();
+
+        client.set_auth(create_test_auth()).await;
+
+        #[derive(serde::Serialize)]
+        struct MyBody {
+            key: String,
+        }
+
+        Mock::given(method("POST"))
+            .and(path("/api2/json/test"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": {
+                    "result": "created"
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let body = MyBody {
+            key: "value".into(),
+        };
+        let result: serde_json::Value = client.post("test", &body).await.unwrap();
+        assert_eq!(result["result"], "created");
     }
 }
