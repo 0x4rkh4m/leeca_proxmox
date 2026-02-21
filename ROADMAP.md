@@ -8,6 +8,7 @@
   - ✅ Rate limiting (client‑side)
   - ✅ Token refresh mechanism
   - ✅ Session persistence
+- ✅ **Cluster resource discovery** – Unified view of all resources (VMs, containers, storage, nodes) via `/cluster/resources`.
 - 🔄 **Resource Management** (next)
   - VM operations (start, stop, reboot, create, delete)
   - Container (LXC) operations

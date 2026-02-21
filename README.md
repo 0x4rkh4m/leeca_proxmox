@@ -167,6 +167,50 @@ assert!(new_client.is_authenticated().await);
 
 The session data contains the ticket and CSRF token with their creation timestamps. It is serialized as JSON. You should store it securely (e.g., encrypted at rest) because it grants access to the Proxmox API.
 
+### Discovering Cluster Resources
+
+Once authenticated, you can retrieve a unified list of all resources in the cluster – including VMs, containers, storage, and nodes – using the `cluster_resources()` method. This is particularly useful for discovering which nodes contain specific VMs before performing node‑level operations.
+
+```rust
+let resources = client.cluster_resources().await?;
+for resource in resources {
+    match resource {
+        ClusterResource::Qemu(vm) => {
+            println!(
+                "VM {} (ID: {}) on node {} is {}",
+                vm.common.name.as_deref().unwrap_or("(unnamed)"),
+                vm.vmid,
+                vm.common.node,
+                vm.common.status
+            );
+        }
+        ClusterResource::Lxc(ct) => {
+            println!(
+                "Container {} (ID: {}) on node {} is {}",
+                ct.common.name.as_deref().unwrap_or("(unnamed)"),
+                ct.vmid,
+                ct.common.node,
+                ct.common.status
+            );
+        }
+        ClusterResource::Storage(st) => {
+            println!(
+                "Storage '{}' on node {} ({} type) is {}",
+                st.storage, st.common.node, st.storage_type, st.common.status
+            );
+        }
+        ClusterResource::Node(node) => {
+            println!(
+                "Node {} is {} (load: {:?})",
+                node.common.node, node.common.status, node.loadavg
+            );
+        }
+    }
+}
+```
+
+The method returns a Vec<ClusterResource> where each variant contains both common fields (like node, id, name, status) and type‑specific fields (e.g., vmid for VMs, storage for storage). This allows you to programmatically inspect your Proxmox infrastructure without hard‑coding node names.
+
 See the [examples](examples/) directory for more.
 
 ## 🛠️ Development

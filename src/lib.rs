@@ -37,7 +37,10 @@ use crate::{
     auth::application::service::login_service::LoginService,
     core::{
         domain::{
-            model::{proxmox_auth::ProxmoxAuth, proxmox_connection::ProxmoxConnection},
+            model::{
+                cluster_resource::ClusterResource, proxmox_auth::ProxmoxAuth,
+                proxmox_connection::ProxmoxConnection,
+            },
             value_object::{
                 ProxmoxCSRFToken, ProxmoxHost, ProxmoxPassword, ProxmoxPort, ProxmoxRealm,
                 ProxmoxTicket, ProxmoxUrl, ProxmoxUsername, validate_host, validate_password,
@@ -446,11 +449,48 @@ impl ProxmoxClient {
         self.api_client.set_auth(auth).await;
         Ok(())
     }
+
+    /// Retrieves all resources in the cluster (VMs, containers, storage, nodes, etc.).
+    ///
+    /// This method calls the `/cluster/resources` endpoint and returns a list of
+    /// [`ClusterResource`] enums. The list can be filtered by resource type, node,
+    /// or status on the client side.
+    ///
+    /// # Errors
+    /// Returns [`ProxmoxError`] if the request fails, the client is not authenticated,
+    /// or the response cannot be parsed.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
+    /// # #[tokio::main]
+    /// # async fn run() -> ProxmoxResult<()> {
+    /// # let mut client = ProxmoxClient::builder()
+    /// #     .host("example.com")
+    /// #     .port(8006)
+    /// #     .credentials("leeca", "password", "pam")
+    /// #     .build().await?;
+    /// # client.login().await?;
+    /// let resources = client.cluster_resources().await?;
+    /// for resource in resources {
+    ///     match resource {
+    ///         ClusterResource::Qemu(vm) => println!("VM {} on node {}", vm.common.name.unwrap_or_default(), vm.common.node),
+    ///         ClusterResource::Lxc(ct) => println!("Container {} on node {}", ct.common.name.unwrap_or_default(), ct.common.node),
+    ///         _ => (),
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn cluster_resources(&self) -> ProxmoxResult<Vec<ClusterResource>> {
+        self.api_client.get("cluster/resources").await
+    }
 }
 
 #[cfg(test)]
 mod tests {
     mod integration;
+    mod resources;
     use super::*;
     use std::time::Duration;
 
