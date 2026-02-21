@@ -17,6 +17,10 @@
 //!         .port(8006)
 //!         .credentials("user", "password", "pam")
 //!         .secure(false)          // disable HTTPS for local development
+//!         // Optional validation:
+//!         // .enable_password_strength(3)
+//!         // .block_reserved_usernames()
+//!         // ...
 //!         .build()
 //!         .await?;
 //!

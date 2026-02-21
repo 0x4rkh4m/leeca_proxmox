@@ -2,7 +2,7 @@ use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
 
 #[tokio::main]
 async fn main() -> ProxmoxResult<()> {
-    // Build client with  Proxmox server details
+    // Build client with Proxmox server details
     let mut client = ProxmoxClient::builder()
         .host("192.168.1.182")
         .port(8006)
