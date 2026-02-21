@@ -1,6 +1,8 @@
 use crate::core::domain::value_object::{ProxmoxCSRFToken, ProxmoxTicket};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+/// Authentication data containing a ticket and optional CSRF token.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProxmoxAuth {
     ticket: ProxmoxTicket,
     csrf_token: Option<ProxmoxCSRFToken>,

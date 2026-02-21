@@ -102,7 +102,7 @@ async fn main() -> ProxmoxResult<()> {
     let mut client = ProxmoxClient::builder()
         .host("192.168.1.100")
         .port(8006)
-        .credentials("apiuser", "strong-password", "pam")
+        .credentials("leeca", "password", "pam")
         .secure(true)                     // HTTPS (default)
         .accept_invalid_certs(false)      // reject invalid certificates (default)
         .build()
@@ -129,6 +129,43 @@ let client = ProxmoxClient::builder()
     .build()
     .await?;
 ```
+
+### Session Persistence
+
+You can save the current authentication session to a file and reload it later, avoiding the need to log in again as long as the tokens are still valid.
+
+```rust
+let mut client = ProxmoxClient::builder()
+    .host("192.168.1.100")
+    .port(8006)
+    .credentials("leeca", "password", "pam")
+    .secure(true)
+    .accept_invalid_certs(false)
+    .build()
+    .await?;
+
+client.login().await?;
+
+// Save session to a file
+client.save_session_to_file("proxmox-session.json").await?;
+
+// Later, create a new client and load the session
+let mut new_client = ProxmoxClient::builder()
+    .host("192.168.1.100")
+    .port(8006)
+    .credentials("dummy", "dummy", "pam") // credentials are still required but won't be used
+    .secure(true)
+    .accept_invalid_certs(false)
+    .with_session(std::fs::File::open("proxmox-session.json")?)
+    .await?
+    .build()
+    .await?;
+
+// The new client is already authenticated
+assert!(new_client.is_authenticated().await);
+```
+
+The session data contains the ticket and CSRF token with their creation timestamps. It is serialized as JSON. You should store it securely (e.g., encrypted at rest) because it grants access to the Proxmox API.
 
 See the [examples](examples/) directory for more.
 

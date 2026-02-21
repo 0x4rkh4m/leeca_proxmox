@@ -455,7 +455,6 @@ mod tests {
         res1.unwrap();
         res2.unwrap();
         let elapsed = start.elapsed();
-        // Relajamos el umbral para CI
         assert!(elapsed < Duration::from_millis(500)); // should be nearly instant
 
         // Send third and fourth requests – they should be delayed to respect the 2/sec rate
