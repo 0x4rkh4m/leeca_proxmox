@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Internal HTTP client (`ApiClient`)** – centralises all API requests, handles authentication headers and automatic ticket refresh on 401 responses.
+- **Rate limiting foundation** – prepared for client‑side rate limiting (to be completed in 0.3.x).
+- **Session persistence groundwork** – `ApiClient` stores authentication state in an `Arc<RwLock>`, ready for save/load.
+
+### Changed
+- **`ProxmoxClient` now uses `ApiClient` internally** – authentication state is managed by the new client.
+- **Authentication methods (`is_authenticated`, `auth_token`, `csrf_token`, `is_ticket_expired`, `is_csrf_expired`) are now `async`** – they need to read the internal lock.
+- **Builder `build()` now returns a `ProxmoxClient` with an `ApiClient`** – no changes to the builder interface.
+
+### Fixed
+- CSRF token validation in tests – now uses valid alphanumeric tokens.
+
+### Removed
+- Direct `connection` and `auth` fields from `ProxmoxClient` – they are now inside `ApiClient`.
+
 ## [0.2.0] - 2026-02-19
 
 ### Added
