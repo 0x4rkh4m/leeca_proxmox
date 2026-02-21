@@ -11,7 +11,7 @@
   - Network configuration
   - Node management
 - 🔄 **Enhanced Security**
-  - Rate limiting (client‑side)
+  - ✅ Rate limiting (client‑side)
   - Token refresh mechanism
   - Session persistence
 
