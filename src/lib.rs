@@ -32,15 +32,13 @@ mod auth;
 mod core;
 
 pub use crate::core::domain::error::{ProxmoxError, ProxmoxResult, ValidationError};
+pub use crate::core::domain::model::cluster_resource::ClusterResource;
 
 use crate::{
     auth::application::service::login_service::LoginService,
     core::{
         domain::{
-            model::{
-                cluster_resource::ClusterResource, proxmox_auth::ProxmoxAuth,
-                proxmox_connection::ProxmoxConnection,
-            },
+            model::{proxmox_auth::ProxmoxAuth, proxmox_connection::ProxmoxConnection},
             value_object::{
                 ProxmoxCSRFToken, ProxmoxHost, ProxmoxPassword, ProxmoxPort, ProxmoxRealm,
                 ProxmoxTicket, ProxmoxUrl, ProxmoxUsername, validate_host, validate_password,
@@ -461,8 +459,10 @@ impl ProxmoxClient {
     /// or the response cannot be parsed.
     ///
     /// # Example
-    /// ```no_run
+    /// ```
     /// # use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
+    /// # use leeca_proxmox::ClusterResource;
+    /// #
     /// # #[tokio::main]
     /// # async fn run() -> ProxmoxResult<()> {
     /// # let mut client = ProxmoxClient::builder()
