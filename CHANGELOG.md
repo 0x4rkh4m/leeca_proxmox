@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Client‑side rate limiting** - Configurable requests per second and burst size (via `.rate_limit()` builder method). Uses a token bucket algorithm that blocks asynchronously when limits are exceeded.
 - **Internal HTTP client (`ApiClient`)** – centralises all API requests, handles authentication headers and automatic ticket refresh on 401 responses.
-- **Session persistence groundwork** – `ApiClient` stores authentication state in an `Arc<RwLock>`, ready for save/load.
+- **Session persistence** – Ability to save the current authentication state (ticket and CSRF token) to a file and load it back. New async methods: `ProxmoxClient::save_session_to_file`, `load_session_from_file`. The builder now supports `with_session` to initialize a client with a previously saved session.
 
 ### Changed
 - **`ProxmoxClient` now uses `ApiClient` internally** – authentication state is managed by the new client.

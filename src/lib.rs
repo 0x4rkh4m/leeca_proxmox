@@ -15,12 +15,10 @@
 //!     let mut client = ProxmoxClient::builder()
 //!         .host("192.168.1.182")
 //!         .port(8006)
-//!         .credentials("user", "password", "pam")
-//!         .secure(false)          // disable HTTPS for local development
-//!         // Optional validation:
-//!         // .enable_password_strength(3)
-//!         // .block_reserved_usernames()
-//!         // ...
+//!         .secure(false) // HTTP for local development
+//!         .accept_invalid_certs(true) // Testing & Self signed certs
+//!         .enable_password_strength(3) // Optional validation
+//!         .block_reserved_usernames() // Optional validation
 //!         .build()
 //!         .await?;
 //!
@@ -51,6 +49,7 @@ use crate::{
 };
 
 use std::backtrace::Backtrace;
+use std::io::Read;
 use std::time::Duration;
 
 /// Configuration for rate limiting.
@@ -115,6 +114,7 @@ pub struct ProxmoxClientBuilder {
     secure: bool,
     accept_invalid_certs: bool,
     config: ValidationConfig,
+    initial_auth: Option<ProxmoxAuth>,
 }
 
 impl Default for ProxmoxClientBuilder {
@@ -128,6 +128,7 @@ impl Default for ProxmoxClientBuilder {
             secure: true, // Default to HTTPS
             accept_invalid_certs: false,
             config: ValidationConfig::default(),
+            initial_auth: None,
         }
     }
 }
@@ -225,6 +226,30 @@ impl ProxmoxClientBuilder {
         self
     }
 
+    /// Load an authentication state from a reader and use it as the initial auth.
+    /// The tokens will be validated for expiration. Returns an error if the data is malformed
+    /// or if the tokens are already expired according to the client's validation config.
+    pub async fn with_session<R: Read>(mut self, mut reader: R) -> ProxmoxResult<Self> {
+        let mut data = String::new();
+        reader.read_to_string(&mut data)?;
+        let auth: ProxmoxAuth = serde_json::from_str(&data)?;
+        // Validate expiration
+        if let Some(csrf) = auth.csrf_token()
+            && csrf.is_expired(self.config.csrf_lifetime)
+        {
+            return Err(ProxmoxError::Session(
+                "Loaded CSRF token is expired".to_string(),
+            ));
+        }
+        if auth.ticket().is_expired(self.config.ticket_lifetime) {
+            return Err(ProxmoxError::Session(
+                "Loaded ticket is expired".to_string(),
+            ));
+        }
+        self.initial_auth = Some(auth);
+        Ok(self)
+    }
+
     /// Constructs a [`ProxmoxClient`] after validating all inputs according to the configuration.
     pub async fn build(self) -> ProxmoxResult<ProxmoxClient> {
         // Extract required fields
@@ -314,6 +339,9 @@ impl ProxmoxClientBuilder {
         );
 
         let api_client = ApiClient::new(connection, self.config.clone())?;
+        if let Some(auth) = self.initial_auth {
+            api_client.set_auth(auth).await;
+        }
 
         Ok(ProxmoxClient {
             api_client,
@@ -376,6 +404,47 @@ impl ProxmoxClient {
         } else {
             true
         }
+    }
+
+    /// Serializes the current authentication state (if any) and saves it to a file.
+    /// Returns the number of bytes written.
+    pub async fn save_session_to_file<P: AsRef<std::path::Path>>(
+        &self,
+        path: P,
+    ) -> ProxmoxResult<usize> {
+        let auth = match self.api_client.auth().await {
+            Some(auth) => auth,
+            None => return Ok(0), // no auth to save
+        };
+        let json = serde_json::to_string(&auth)?;
+        tokio::fs::write(path, &json).await?;
+        Ok(json.len())
+    }
+
+    /// Loads an authentication state from a file and sets it as the current auth.
+    /// Returns an error if the data is malformed or if the tokens are already expired
+    /// (according to the client's validation config).
+    pub async fn load_session_from_file<P: AsRef<std::path::Path>>(
+        &mut self,
+        path: P,
+    ) -> ProxmoxResult<()> {
+        let data = tokio::fs::read_to_string(path).await?;
+        let auth: ProxmoxAuth = serde_json::from_str(&data)?;
+        // Validate expiration
+        if let Some(csrf) = auth.csrf_token()
+            && csrf.is_expired(self.config.csrf_lifetime)
+        {
+            return Err(ProxmoxError::Session(
+                "Loaded CSRF token is expired".to_string(),
+            ));
+        }
+        if auth.ticket().is_expired(self.config.ticket_lifetime) {
+            return Err(ProxmoxError::Session(
+                "Loaded ticket is expired".to_string(),
+            ));
+        }
+        self.api_client.set_auth(auth).await;
+        Ok(())
     }
 }
 
@@ -530,5 +599,62 @@ mod tests {
 
         assert!(!client.is_ticket_expired().await);
         assert!(!client.is_csrf_expired().await);
+    }
+
+    #[tokio::test]
+    async fn test_session_save_load() {
+        use crate::core::domain::model::proxmox_auth::ProxmoxAuth;
+        use crate::core::domain::value_object::{ProxmoxCSRFToken, ProxmoxTicket};
+        use tempfile::NamedTempFile;
+
+        let ticket = ProxmoxTicket::new_unchecked("PVE:ticket".to_string());
+        let csrf = ProxmoxCSRFToken::new_unchecked("id:val".to_string());
+        let auth = ProxmoxAuth::new(ticket.clone(), Some(csrf.clone()));
+
+        // Build a client with dummy connection
+        let connection = ProxmoxConnection::new(
+            ProxmoxHost::new_unchecked("host".to_string()),
+            ProxmoxPort::new_unchecked(8006),
+            ProxmoxUsername::new_unchecked("user".to_string()),
+            ProxmoxPassword::new_unchecked("pass".to_string()),
+            ProxmoxRealm::new_unchecked("pam".to_string()),
+            true,
+            false,
+            ProxmoxUrl::new_unchecked("https://host:8006/".to_string()),
+        );
+        let api_client = ApiClient::new(connection, ValidationConfig::default()).unwrap();
+        api_client.set_auth(auth).await;
+
+        let client = ProxmoxClient {
+            api_client,
+            config: ValidationConfig::default(),
+        };
+
+        // Save to temp file
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_path_buf();
+        let written = client.save_session_to_file(&path).await.unwrap();
+        assert!(written > 0);
+
+        // Create a new client and load session
+        let new_client_builder = ProxmoxClient::builder()
+            .host("host")
+            .port(8006)
+            .credentials("user", "password", "pam")
+            .secure(false)
+            .accept_invalid_certs(false);
+        let new_client = new_client_builder
+            .with_session(std::fs::File::open(&path).unwrap())
+            .await
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        assert!(new_client.is_authenticated().await);
+        assert_eq!(
+            client.auth_token().await.unwrap().as_str(),
+            new_client.auth_token().await.unwrap().as_str()
+        );
     }
 }
