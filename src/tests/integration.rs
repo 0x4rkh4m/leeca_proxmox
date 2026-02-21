@@ -29,9 +29,9 @@ async fn test_integration_login_success() -> ProxmoxResult<()> {
         .await?;
 
     client.login().await?;
-    assert!(client.is_authenticated());
-    assert!(client.auth_token().is_some());
-    assert!(client.csrf_token().is_some());
+    assert!(client.is_authenticated().await);
+    assert!(client.auth_token().await.is_some());
+    assert!(client.csrf_token().await.is_some());
 
     Ok(())
 }

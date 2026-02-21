@@ -2,7 +2,20 @@
 
 ## Completed Versions
 
-### 0.2.0 (Current)
+### 0.3.0 (In Progress)
+- ✅ **HTTP Client Refactor**: Centralised request handling with automatic authentication and ticket refresh.
+- 🔄 **Resource Management** (next)
+  - VM operations (start, stop, reboot, create, delete)
+  - Container (LXC) operations
+  - Storage management (list, create, delete)
+  - Network configuration
+  - Node management
+- 🔄 **Enhanced Security**
+  - Rate limiting (client‑side)
+  - Token refresh mechanism
+  - Session persistence
+
+### 0.2.0 (Current Release)
 - ✅ **Validation overhaul**: All extra checks (password strength, DNS, reserved usernames) are now opt‑in, off by default.
 - ✅ **Simplified API**: Removed `ValueObject` trait and async locking; value objects are plain structs.
 - ✅ **Builder improvements**: Defaults to secure HTTPS, accepts custom `ValidationConfig`.
@@ -20,18 +33,6 @@
 
 ### 0.1.0
 - ✅ Core client and authentication.
-
-## Next Release (0.3.0)
-- 🔄 **Resource Management**
-  - VM operations (start, stop, reboot, create, delete)
-  - Container (LXC) operations
-  - Storage management (list, create, delete)
-  - Network configuration
-  - Node management
-- 🔄 **Enhanced Security**
-  - Rate limiting (client‑side)
-  - Token refresh mechanism
-  - Session persistence
 
 ## Version 0.4.0
 - 📋 **Task Management**

@@ -21,7 +21,7 @@
 //!         .await?;
 //!
 //!     client.login().await?;
-//!     println!("Authenticated!");
+//!     println!("Authenticated: {}", client.is_authenticated().await);
 //!     Ok(())
 //! }
 //! ```
@@ -33,15 +33,19 @@ pub use crate::core::domain::error::{ProxmoxError, ProxmoxResult, ValidationErro
 
 use crate::{
     auth::application::service::login_service::LoginService,
-    core::domain::{
-        model::{proxmox_auth::ProxmoxAuth, proxmox_connection::ProxmoxConnection},
-        value_object::{
-            ProxmoxCSRFToken, ProxmoxHost, ProxmoxPassword, ProxmoxPort, ProxmoxRealm,
-            ProxmoxTicket, ProxmoxUrl, ProxmoxUsername, validate_host, validate_password,
-            validate_port, validate_realm, validate_url, validate_username,
+    core::{
+        domain::{
+            model::{proxmox_auth::ProxmoxAuth, proxmox_connection::ProxmoxConnection},
+            value_object::{
+                ProxmoxCSRFToken, ProxmoxHost, ProxmoxPassword, ProxmoxPort, ProxmoxRealm,
+                ProxmoxTicket, ProxmoxUrl, ProxmoxUsername, validate_host, validate_password,
+                validate_port, validate_realm, validate_url, validate_username,
+            },
         },
+        infrastructure::api_client::ApiClient,
     },
 };
+
 use std::backtrace::Backtrace;
 use std::time::Duration;
 
@@ -80,8 +84,7 @@ impl Default for ValidationConfig {
 /// Use the builder to configure connection settings and validation rules.
 #[derive(Debug)]
 pub struct ProxmoxClient {
-    connection: ProxmoxConnection,
-    auth: Option<ProxmoxAuth>,
+    api_client: ApiClient,
     config: ValidationConfig,
 }
 
@@ -284,9 +287,10 @@ impl ProxmoxClientBuilder {
             url,
         );
 
+        let api_client = ApiClient::new(connection, self.config.clone())?;
+
         Ok(ProxmoxClient {
-            connection,
-            auth: None,
+            api_client,
             config: self.config,
         })
     }
@@ -300,44 +304,52 @@ impl ProxmoxClient {
     }
 
     /// Authenticates with the Proxmox VE server.
+    ///
+    /// This method performs a login using the credentials provided during builder construction
+    /// and stores the obtained ticket and CSRF token inside the client.
     pub async fn login(&mut self) -> ProxmoxResult<()> {
         let service = LoginService::new();
-        self.auth = Some(service.execute(&self.connection).await?);
+        let auth = service.execute(self.api_client.connection()).await?;
+        self.api_client.set_auth(auth).await;
         Ok(())
     }
 
-    /// Returns `true` if authenticated.
-    #[must_use]
-    pub fn is_authenticated(&self) -> bool {
-        self.auth.is_some()
+    /// Returns `true` if the client has a valid (non‑expired) authentication ticket.
+    pub async fn is_authenticated(&self) -> bool {
+        self.api_client.is_authenticated().await
     }
 
-    /// Returns the authentication ticket, if authenticated.
-    #[must_use]
-    pub fn auth_token(&self) -> Option<&ProxmoxTicket> {
-        self.auth.as_ref().map(|a| a.ticket())
+    /// Returns the authentication ticket, if any.
+    pub async fn auth_token(&self) -> Option<ProxmoxTicket> {
+        self.api_client.auth().await.map(|a| a.ticket().clone())
     }
 
-    /// Returns the CSRF token, if authenticated.
-    #[must_use]
-    pub fn csrf_token(&self) -> Option<&ProxmoxCSRFToken> {
-        self.auth.as_ref().and_then(|a| a.csrf_token())
+    /// Returns the CSRF token, if any.
+    pub async fn csrf_token(&self) -> Option<ProxmoxCSRFToken> {
+        self.api_client
+            .auth()
+            .await
+            .and_then(|a| a.csrf_token().cloned())
     }
 
-    /// Checks if the ticket is expired based on configured lifetime.
-    #[must_use]
-    pub fn is_ticket_expired(&self) -> bool {
-        self.auth_token()
-            .map(|t| t.is_expired(self.config.ticket_lifetime))
-            .unwrap_or(true)
+    /// Checks if the stored ticket is expired according to the configured lifetime.
+    pub async fn is_ticket_expired(&self) -> bool {
+        if let Some(auth) = self.api_client.auth().await {
+            auth.ticket().is_expired(self.config.ticket_lifetime)
+        } else {
+            true
+        }
     }
 
-    /// Checks if the CSRF token is expired.
-    #[must_use]
-    pub fn is_csrf_expired(&self) -> bool {
-        self.csrf_token()
-            .map(|c| c.is_expired(self.config.csrf_lifetime))
-            .unwrap_or(true)
+    /// Checks if the stored CSRF token is expired according to the configured lifetime.
+    pub async fn is_csrf_expired(&self) -> bool {
+        if let Some(auth) = self.api_client.auth().await {
+            auth.csrf_token()
+                .map(|c| c.is_expired(self.config.csrf_lifetime))
+                .unwrap_or(true)
+        } else {
+            true
+        }
     }
 }
 
@@ -385,12 +397,12 @@ mod tests {
             .build()
             .await
             .unwrap();
-        assert!(!client.is_authenticated());
-        assert!(client.auth_token().is_none());
-        assert!(client.csrf_token().is_none());
+        assert!(!client.is_authenticated().await);
+        assert!(client.auth_token().await.is_none());
+        assert!(client.csrf_token().await.is_none());
         // No ticket/CSRF => they are considered expired
-        assert!(client.is_ticket_expired());
-        assert!(client.is_csrf_expired());
+        assert!(client.is_ticket_expired().await);
+        assert!(client.is_csrf_expired().await);
     }
 
     #[tokio::test]
@@ -434,7 +446,7 @@ mod tests {
             .build()
             .await
             .unwrap();
-        assert!(!client.is_authenticated());
+        assert!(!client.is_authenticated().await);
     }
 
     #[tokio::test]
@@ -461,27 +473,36 @@ mod tests {
         assert_eq!(config.csrf_lifetime, Duration::from_secs(300));
     }
 
-    // We'll test expiration methods with mocked tokens
-    #[test]
-    fn test_expiration_checks() {
+    // Test expiration methods with mocked auth
+    #[tokio::test]
+    async fn test_expiration_checks() {
+        use crate::core::domain::model::proxmox_auth::ProxmoxAuth;
+        use crate::core::domain::value_object::{ProxmoxCSRFToken, ProxmoxTicket};
+
         let ticket = ProxmoxTicket::new_unchecked("PVE:ticket".to_string());
         let csrf = ProxmoxCSRFToken::new_unchecked("id:val".to_string());
         let auth = ProxmoxAuth::new(ticket, Some(csrf));
+
+        // Build a client with a dummy connection (won't be used)
+        let connection = ProxmoxConnection::new(
+            ProxmoxHost::new_unchecked("host".to_string()),
+            ProxmoxPort::new_unchecked(8006),
+            ProxmoxUsername::new_unchecked("user".to_string()),
+            ProxmoxPassword::new_unchecked("pass".to_string()),
+            ProxmoxRealm::new_unchecked("pam".to_string()),
+            true,
+            false,
+            ProxmoxUrl::new_unchecked("https://host:8006/".to_string()),
+        );
+        let api_client = ApiClient::new(connection, ValidationConfig::default()).unwrap();
+        api_client.set_auth(auth).await;
+
         let client = ProxmoxClient {
-            connection: ProxmoxConnection::new(
-                ProxmoxHost::new_unchecked("host".to_string()),
-                ProxmoxPort::new_unchecked(8006),
-                ProxmoxUsername::new_unchecked("user".to_string()),
-                ProxmoxPassword::new_unchecked("pass".to_string()),
-                ProxmoxRealm::new_unchecked("pam".to_string()),
-                true,
-                false,
-                ProxmoxUrl::new_unchecked("https://host:8006/".to_string()),
-            ),
-            auth: Some(auth),
+            api_client,
             config: ValidationConfig::default(),
         };
-        assert!(!client.is_ticket_expired());
-        assert!(!client.is_csrf_expired());
+
+        assert!(!client.is_ticket_expired().await);
+        assert!(!client.is_csrf_expired().await);
     }
 }
