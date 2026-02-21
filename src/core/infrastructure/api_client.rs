@@ -4,7 +4,9 @@ use crate::{
     ProxmoxAuth, ProxmoxConnection, ProxmoxError, ProxmoxResult, ValidationConfig,
     auth::application::service::login_service::LoginService,
 };
+use governor::{DefaultDirectRateLimiter, Quota};
 use reqwest::{Client, StatusCode};
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -19,6 +21,7 @@ pub struct ApiClient {
     connection: Arc<ProxmoxConnection>,
     auth: Arc<RwLock<Option<ProxmoxAuth>>>,
     config: Arc<ValidationConfig>,
+    rate_limiter: Option<Arc<DefaultDirectRateLimiter>>,
 }
 
 impl ApiClient {
@@ -32,11 +35,18 @@ impl ApiClient {
             .build()
             .map_err(|e| ProxmoxError::Connection(e.to_string()))?;
 
+        let rate_limiter = config.rate_limit.map(|rl| {
+            let quota = Quota::per_second(NonZeroU32::new(rl.requests_per_second).unwrap())
+                .allow_burst(NonZeroU32::new(rl.burst_size).unwrap());
+            Arc::new(DefaultDirectRateLimiter::direct(quota))
+        });
+
         Ok(Self {
             http_client,
             connection: Arc::new(connection),
             auth: Arc::new(RwLock::new(None)),
             config: Arc::new(config),
+            rate_limiter,
         })
     }
 
@@ -150,6 +160,12 @@ impl ApiClient {
     {
         // Ensure we have a valid ticket (refresh if needed)
         self.ensure_authenticated().await?;
+
+        // Apply rate limiting if enabled
+        if let Some(limiter) = &self.rate_limiter {
+            // `until_ready()` returns a future that completes when capacity is available.
+            limiter.until_ready().await;
+        }
 
         // Build the full URL
         let base = self.connection.url().as_str().trim_end_matches('/');
@@ -288,6 +304,7 @@ mod tests {
     use super::*;
     use crate::{
         ProxmoxHost, ProxmoxPassword, ProxmoxPort, ProxmoxRealm, ProxmoxUrl, ProxmoxUsername,
+        RateLimitConfig,
         core::domain::value_object::{ProxmoxCSRFToken, ProxmoxTicket},
     };
     use wiremock::{
@@ -400,5 +417,88 @@ mod tests {
 
         let result: ProxmoxResult<serde_json::Value> = client.get("test").await;
         assert!(matches!(result, Err(ProxmoxError::Authentication(_))));
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiting_delays_requests() {
+        use tokio::time::{self, Duration};
+
+        time::pause();
+
+        let mock_server = MockServer::start().await;
+        let connection = create_test_connection(&mock_server.uri());
+        let config = ValidationConfig {
+            rate_limit: Some(RateLimitConfig {
+                requests_per_second: 2,
+                burst_size: 2,
+            }),
+            ..Default::default()
+        };
+        let client = ApiClient::new(connection, config).unwrap();
+
+        // Pre-authenticate
+        client.set_auth(create_test_auth()).await;
+
+        // Mock endpoint returns 200 quickly
+        Mock::given(method("GET"))
+            .and(path("/api2/json/test"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": "ok"})),
+            )
+            .expect(4) // we will send 4 requests
+            .mount(&mock_server)
+            .await;
+
+        // Send first two requests immediately – they should pass without delay (burst)
+        let start = time::Instant::now();
+        let req1 = client.get::<serde_json::Value>("test");
+        let req2 = client.get::<serde_json::Value>("test");
+        let (res1, res2) = tokio::join!(req1, req2);
+        res1.unwrap();
+        res2.unwrap();
+        let elapsed = start.elapsed();
+        assert!(elapsed < Duration::from_millis(100)); // should be nearly instant
+
+        // Send third and fourth requests – they should be delayed to respect the 2/sec rate
+        let start = time::Instant::now();
+        let req3 = client.get::<serde_json::Value>("test");
+        let req4 = client.get::<serde_json::Value>("test");
+        let (res3, res4) = tokio::join!(req3, req4);
+        res3.unwrap();
+        res4.unwrap();
+        let elapsed = start.elapsed();
+        // With 2 requests/sec, two requests should take about 1 second total (since the bucket was empty)
+        assert!(elapsed >= Duration::from_millis(950));
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiting_disabled() {
+        use tokio::time::{self, Duration};
+
+        let mock_server = MockServer::start().await;
+        let connection = create_test_connection(&mock_server.uri());
+        let config = ValidationConfig {
+            rate_limit: None, // disabled
+            ..Default::default()
+        };
+        let client = ApiClient::new(connection, config).unwrap();
+        client.set_auth(create_test_auth()).await;
+
+        Mock::given(method("GET"))
+            .and(path("/api2/json/test"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": "ok"})),
+            )
+            .expect(10)
+            .mount(&mock_server)
+            .await;
+
+        let start = time::Instant::now();
+        for _ in 0..10 {
+            client.get::<serde_json::Value>("test").await.unwrap();
+        }
+        let elapsed = start.elapsed();
+        // Should be very fast (no delays)
+        assert!(elapsed < Duration::from_millis(500));
     }
 }

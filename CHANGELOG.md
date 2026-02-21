@@ -8,8 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Client‑side rate limiting** - Configurable requests per second and burst size (via `.rate_limit()` builder method). Uses a token bucket algorithm that blocks asynchronously when limits are exceeded.
 - **Internal HTTP client (`ApiClient`)** – centralises all API requests, handles authentication headers and automatic ticket refresh on 401 responses.
-- **Rate limiting foundation** – prepared for client‑side rate limiting (to be completed in 0.3.x).
 - **Session persistence groundwork** – `ApiClient` stores authentication state in an `Arc<RwLock>`, ready for save/load.
 
 ### Changed

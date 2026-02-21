@@ -49,6 +49,15 @@ use crate::{
 use std::backtrace::Backtrace;
 use std::time::Duration;
 
+/// Configuration for rate limiting.
+#[derive(Debug, Clone, Copy)]
+pub struct RateLimitConfig {
+    /// Number of requests allowed per second (steady state).
+    pub requests_per_second: u32,
+    /// Maximum burst size (how many requests can be sent in a short burst).
+    pub burst_size: u32,
+}
+
 /// Configuration for validating client inputs.
 ///
 /// By default, all extra checks are disabled, meaning only basic format validation is performed.
@@ -65,6 +74,8 @@ pub struct ValidationConfig {
     pub ticket_lifetime: Duration,
     /// CSRF token lifetime (default 5 minutes).
     pub csrf_lifetime: Duration,
+    /// Optional rate limiting configuration. If `None`, no rate limiting is applied.
+    pub rate_limit: Option<RateLimitConfig>,
 }
 
 impl Default for ValidationConfig {
@@ -75,6 +86,7 @@ impl Default for ValidationConfig {
             block_reserved_usernames: false,
             ticket_lifetime: Duration::from_secs(7200),
             csrf_lifetime: Duration::from_secs(300),
+            rate_limit: None, // default: no limiting
         }
     }
 }
@@ -196,6 +208,16 @@ impl ProxmoxClientBuilder {
     #[must_use]
     pub fn block_reserved_usernames(mut self) -> Self {
         self.config.block_reserved_usernames = true;
+        self
+    }
+
+    /// Sets client‑side rate limiting: `requests_per_second` and `burst_size`.
+    #[must_use]
+    pub fn rate_limit(mut self, requests_per_second: u32, burst_size: u32) -> Self {
+        self.config.rate_limit = Some(RateLimitConfig {
+            requests_per_second,
+            burst_size,
+        });
         self
     }
 
