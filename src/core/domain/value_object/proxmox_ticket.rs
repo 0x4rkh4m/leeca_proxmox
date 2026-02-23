@@ -1,10 +1,12 @@
 use crate::core::domain::error::ValidationError;
+use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime};
 
 /// A Proxmox authentication ticket.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProxmoxTicket {
     value: String,
+    #[serde(with = "crate::core::domain::value_object::serde_helpers::system_time")]
     created_at: SystemTime,
 }
 
@@ -106,5 +108,26 @@ mod tests {
     fn test_ticket_as_cookie_header() {
         let ticket = ProxmoxTicket::new_unchecked("PVE:ticket".to_string());
         assert_eq!(ticket.as_cookie_header(), "PVEAuthCookie=PVE:ticket");
+    }
+
+    #[test]
+    fn test_serde_roundtrip() {
+        let original = ProxmoxTicket::new_unchecked("PVE:ticket".to_string());
+        let serialized = serde_json::to_string(&original).unwrap();
+        let deserialized: ProxmoxTicket = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(original.as_str(), deserialized.as_str());
+
+        // Because we serialize as seconds (truncating fractional seconds), the deserialized
+        // time may be up to 1 second earlier. We check that the difference is less than 1 second.
+        let diff = original
+            .created_at
+            .duration_since(deserialized.created_at)
+            .unwrap_or_else(|_| {
+                deserialized
+                    .created_at
+                    .duration_since(original.created_at)
+                    .unwrap()
+            });
+        assert!(diff < Duration::from_secs(1));
     }
 }

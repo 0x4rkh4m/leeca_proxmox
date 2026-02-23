@@ -6,6 +6,7 @@ mod proxmox_realm;
 mod proxmox_ticket;
 mod proxmox_uri;
 mod proxmox_username;
+mod serde_helpers;
 
 pub use proxmox_csrf_token::ProxmoxCSRFToken;
 pub use proxmox_host::ProxmoxHost;
