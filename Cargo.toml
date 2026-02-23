@@ -1,6 +1,6 @@
 [package]
 name = "leeca_proxmox"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 authors = ["4rkh4m <4rkham@proton.me>"]
 description = "A modern, safe, and async-first SDK for interacting with Proxmox Virtual Environment servers"

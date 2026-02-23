@@ -86,7 +86,7 @@ Or edit `Cargo.toml` manually:
 
 ```toml
 [dependencies]
-leeca_proxmox = "0.2"
+leeca_proxmox = "0.3"
 tokio = { version = "1", features = ["full"] }
 ```
 
