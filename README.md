@@ -242,6 +242,38 @@ println!("DNS servers: {:?}", dns.servers);
 
 See the [node_management example](examples/resources/node_management.rs) for a complete demonstration.
 
+### VM Management
+
+After authentication, you can manage QEMU virtual machines on any node:
+
+```rust
+// List all VMs on a node
+let vms = client.vms("pve1").await?;
+for vm in vms {
+    println!("{} ({}): {}", vm.name, vm.vmid, vm.status);
+}
+
+// Get detailed status
+let status = client.vm_status("pve1", 100).await?;
+println!("CPU: {:.2}%", status.cpu.unwrap_or(0.0) * 100.0);
+
+// Start a VM
+let task = client.start_vm("pve1", 100).await?;
+println!("Task ID: {}", task);
+
+// Create a new VM
+let params = CreateVmParams {
+    vmid: 200,
+    name: "my-vm".to_string(),
+    memory: Some(4096),
+    cores: Some(2),
+    ..Default::default()
+};
+let task = client.create_vm("pve1", &params).await?;
+```
+
+See the [vm_operations example](examples/resources/vm_operations.rs) for a complete demonstration.
+
 See the [examples](examples/) directory for more.
 
 ## 🛠️ Development

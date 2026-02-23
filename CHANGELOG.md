@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **VM operations** – Complete set of methods for managing QEMU virtual machines:
+  - `vms(node)` – List all VMs on a node.
+  - `vm_status(node, vmid)` – Get detailed current status.
+  - `start_vm`, `stop_vm`, `shutdown_vm`, `reboot_vm`, `reset_vm` – Control VM state.
+  - `delete_vm(node, vmid, purge)` – Remove a VM.
+  - `create_vm(node, params)` – Create a new VM with full configuration.
+  - `vm_config(node, vmid)` – Get current configuration.
+  - `update_vm_config(node, vmid, params)` – Update configuration.
+- **Domain models** – Added `VmListItem`, `VmStatusCurrent`, `VmConfig`, `CreateVmParams` to represent VM data.
+- **Example** – `examples/vm_operations.rs` demonstrates listing, inspecting, and creating VMs.
 - **Node management operations** – New methods for node discovery and inspection:
   - `ProxmoxClient::nodes()` – Lists all nodes in the cluster with basic information and resource usage.
   - `ProxmoxClient::node_status(node)` – Retrieves detailed status for a specific node, including CPU, memory, swap, load average, and IO delay (`wait`).
