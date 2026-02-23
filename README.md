@@ -86,7 +86,7 @@ Or edit `Cargo.toml` manually:
 
 ```toml
 [dependencies]
-leeca_proxmox = "0.2"
+leeca_proxmox = "0.3"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -102,7 +102,7 @@ async fn main() -> ProxmoxResult<()> {
     let mut client = ProxmoxClient::builder()
         .host("192.168.1.100")
         .port(8006)
-        .credentials("apiuser", "strong-password", "pam")
+        .credentials("leeca", "password", "pam")
         .secure(true)                     // HTTPS (default)
         .accept_invalid_certs(false)      // reject invalid certificates (default)
         .build()
@@ -114,6 +114,8 @@ async fn main() -> ProxmoxResult<()> {
     Ok(())
 }
 ```
+
+See the [authentication example](examples/auth/login.rs) for a complete demonstration.
 
 ### Enabling extra validation
 
@@ -129,6 +131,148 @@ let client = ProxmoxClient::builder()
     .build()
     .await?;
 ```
+
+### Session Persistence
+
+You can save the current authentication session to a file and reload it later, avoiding the need to log in again as long as the tokens are still valid.
+
+```rust
+let mut client = ProxmoxClient::builder()
+    .host("192.168.1.100")
+    .port(8006)
+    .credentials("leeca", "password", "pam")
+    .secure(true)
+    .accept_invalid_certs(false)
+    .build()
+    .await?;
+
+client.login().await?;
+
+// Save session to a file
+client.save_session_to_file("proxmox-session.json").await?;
+
+// Later, create a new client and load the session
+let mut new_client = ProxmoxClient::builder()
+    .host("192.168.1.100")
+    .port(8006)
+    .credentials("dummy", "dummy", "pam") // credentials are still required but won't be used
+    .secure(true)
+    .accept_invalid_certs(false)
+    .with_session(std::fs::File::open("proxmox-session.json")?)
+    .await?
+    .build()
+    .await?;
+
+// The new client is already authenticated
+assert!(new_client.is_authenticated().await);
+```
+
+The session data contains the ticket and CSRF token with their creation timestamps. It is serialized as JSON. You should store it securely (e.g., encrypted at rest) because it grants access to the Proxmox API.
+
+See the [session_persistence example](examples/auth/session_persistence.rs) for a complete demonstration.
+
+### Discovering Cluster Resources
+
+Once authenticated, you can retrieve a unified list of all resources in the cluster – including VMs, containers, storage, and nodes – using the `cluster_resources()` method. This is particularly useful for discovering which nodes contain specific VMs before performing node‑level operations.
+
+```rust
+let resources = client.cluster_resources().await?;
+for resource in resources {
+    match resource {
+        ClusterResource::Qemu(vm) => {
+            println!(
+                "VM {} (ID: {}) on node {} is {}",
+                vm.common.name.as_deref().unwrap_or("(unnamed)"),
+                vm.vmid,
+                vm.common.node,
+                vm.common.status
+            );
+        }
+        ClusterResource::Lxc(ct) => {
+            println!(
+                "Container {} (ID: {}) on node {} is {}",
+                ct.common.name.as_deref().unwrap_or("(unnamed)"),
+                ct.vmid,
+                ct.common.node,
+                ct.common.status
+            );
+        }
+        ClusterResource::Storage(st) => {
+            println!(
+                "Storage '{}' on node {} ({} type) is {}",
+                st.storage, st.common.node, st.storage_type, st.common.status
+            );
+        }
+        ClusterResource::Node(node) => {
+            println!(
+                "Node {} is {} (load: {:?})",
+                node.common.node, node.common.status, node.loadavg
+            );
+        }
+    }
+}
+```
+
+The method returns a Vec<ClusterResource> where each variant contains both common fields (like node, id, name, status) and type‑specific fields (e.g., vmid for VMs, storage for storage). This allows you to programmatically inspect your Proxmox infrastructure without hard‑coding node names.
+
+See the [cluster_resources example](examples/resources/cluster_resources.rs) for a complete demonstration.
+
+### Node Management
+
+Once authenticated, you can inspect the nodes in your cluster:
+
+```rust
+// List all nodes
+let nodes = client.nodes().await?;
+for node in nodes {
+    println!("Node: {} (status: {})", node.node, node.status);
+}
+
+// Get detailed status of a specific node
+let status = client.node_status("pve1").await?;
+println!("CPU: {:.2}%, IO Delay: {:.2}%", 
+    status.cpu * 100.0, 
+    status.wait.unwrap_or(0.0) * 100.0
+);
+
+// Get DNS configuration
+let dns = client.node_dns("pve1").await?;
+println!("DNS servers: {:?}", dns.servers);
+```
+
+See the [node_management example](examples/resources/node_management.rs) for a complete demonstration.
+
+### VM Management
+
+After authentication, you can manage QEMU virtual machines on any node:
+
+```rust
+// List all VMs on a node
+let vms = client.vms("pve1").await?;
+for vm in vms {
+    println!("{} ({}): {}", vm.name, vm.vmid, vm.status);
+}
+
+// Get detailed status
+let status = client.vm_status("pve1", 100).await?;
+println!("CPU: {:.2}%", status.cpu.unwrap_or(0.0) * 100.0);
+
+// Start a VM
+let task = client.start_vm("pve1", 100).await?;
+println!("Task ID: {}", task);
+
+// Create a new VM
+let params = CreateVmParams {
+    vmid: 200,
+    name: "my-vm".to_string(),
+    memory: Some(4096),
+    cores: Some(2),
+    ..Default::default()
+};
+let task = client.create_vm("pve1", &params).await?;
+```
+
+See the [vm_operations example](examples/resources/vm_operations.rs) for a complete demonstration.
 
 See the [examples](examples/) directory for more.
 

@@ -15,8 +15,10 @@
 //!     let mut client = ProxmoxClient::builder()
 //!         .host("192.168.1.182")
 //!         .port(8006)
-//!         .credentials("user", "password", "pam")
-//!         .secure(false)          // disable HTTPS for local development
+//!         .secure(false) // HTTP for local development
+//!         .accept_invalid_certs(true) // Testing & Self signed certs
+//!         .enable_password_strength(3) // Optional validation
+//!         .block_reserved_usernames() // Optional validation
 //!         .build()
 //!         .await?;
 //!
@@ -30,6 +32,13 @@ mod auth;
 mod core;
 
 pub use crate::core::domain::error::{ProxmoxError, ProxmoxResult, ValidationError};
+pub use crate::core::domain::model::{
+    cluster_resource::ClusterResource,
+    node_dns::NodeDnsConfig,
+    node_list_item::NodeListItem,
+    node_status::{MemoryInfo, NodeStatus},
+    vm::*,
+};
 
 use crate::{
     auth::application::service::login_service::LoginService,
@@ -47,7 +56,17 @@ use crate::{
 };
 
 use std::backtrace::Backtrace;
+use std::io::Read;
 use std::time::Duration;
+
+/// Configuration for rate limiting.
+#[derive(Debug, Clone, Copy)]
+pub struct RateLimitConfig {
+    /// Number of requests allowed per second (steady state).
+    pub requests_per_second: u32,
+    /// Maximum burst size (how many requests can be sent in a short burst).
+    pub burst_size: u32,
+}
 
 /// Configuration for validating client inputs.
 ///
@@ -65,6 +84,8 @@ pub struct ValidationConfig {
     pub ticket_lifetime: Duration,
     /// CSRF token lifetime (default 5 minutes).
     pub csrf_lifetime: Duration,
+    /// Optional rate limiting configuration. If `None`, no rate limiting is applied.
+    pub rate_limit: Option<RateLimitConfig>,
 }
 
 impl Default for ValidationConfig {
@@ -75,6 +96,7 @@ impl Default for ValidationConfig {
             block_reserved_usernames: false,
             ticket_lifetime: Duration::from_secs(7200),
             csrf_lifetime: Duration::from_secs(300),
+            rate_limit: None, // default: no limiting
         }
     }
 }
@@ -99,6 +121,7 @@ pub struct ProxmoxClientBuilder {
     secure: bool,
     accept_invalid_certs: bool,
     config: ValidationConfig,
+    initial_auth: Option<ProxmoxAuth>,
 }
 
 impl Default for ProxmoxClientBuilder {
@@ -112,6 +135,7 @@ impl Default for ProxmoxClientBuilder {
             secure: true, // Default to HTTPS
             accept_invalid_certs: false,
             config: ValidationConfig::default(),
+            initial_auth: None,
         }
     }
 }
@@ -197,6 +221,40 @@ impl ProxmoxClientBuilder {
     pub fn block_reserved_usernames(mut self) -> Self {
         self.config.block_reserved_usernames = true;
         self
+    }
+
+    /// Sets client‑side rate limiting: `requests_per_second` and `burst_size`.
+    #[must_use]
+    pub fn rate_limit(mut self, requests_per_second: u32, burst_size: u32) -> Self {
+        self.config.rate_limit = Some(RateLimitConfig {
+            requests_per_second,
+            burst_size,
+        });
+        self
+    }
+
+    /// Load an authentication state from a reader and use it as the initial auth.
+    /// The tokens will be validated for expiration. Returns an error if the data is malformed
+    /// or if the tokens are already expired according to the client's validation config.
+    pub async fn with_session<R: Read>(mut self, mut reader: R) -> ProxmoxResult<Self> {
+        let mut data = String::new();
+        reader.read_to_string(&mut data)?;
+        let auth: ProxmoxAuth = serde_json::from_str(&data)?;
+        // Validate expiration
+        if let Some(csrf) = auth.csrf_token()
+            && csrf.is_expired(self.config.csrf_lifetime)
+        {
+            return Err(ProxmoxError::Session(
+                "Loaded CSRF token is expired".to_string(),
+            ));
+        }
+        if auth.ticket().is_expired(self.config.ticket_lifetime) {
+            return Err(ProxmoxError::Session(
+                "Loaded ticket is expired".to_string(),
+            ));
+        }
+        self.initial_auth = Some(auth);
+        Ok(self)
     }
 
     /// Constructs a [`ProxmoxClient`] after validating all inputs according to the configuration.
@@ -288,6 +346,9 @@ impl ProxmoxClientBuilder {
         );
 
         let api_client = ApiClient::new(connection, self.config.clone())?;
+        if let Some(auth) = self.initial_auth {
+            api_client.set_auth(auth).await;
+        }
 
         Ok(ProxmoxClient {
             api_client,
@@ -351,11 +412,376 @@ impl ProxmoxClient {
             true
         }
     }
+
+    /// Serializes the current authentication state (if any) and saves it to a file.
+    /// Returns the number of bytes written.
+    pub async fn save_session_to_file<P: AsRef<std::path::Path>>(
+        &self,
+        path: P,
+    ) -> ProxmoxResult<usize> {
+        let auth = match self.api_client.auth().await {
+            Some(auth) => auth,
+            None => return Ok(0), // no auth to save
+        };
+        let json = serde_json::to_string(&auth)?;
+        tokio::fs::write(path, &json).await?;
+        Ok(json.len())
+    }
+
+    /// Loads an authentication state from a file and sets it as the current auth.
+    /// Returns an error if the data is malformed or if the tokens are already expired
+    /// (according to the client's validation config).
+    pub async fn load_session_from_file<P: AsRef<std::path::Path>>(
+        &mut self,
+        path: P,
+    ) -> ProxmoxResult<()> {
+        let data = tokio::fs::read_to_string(path).await?;
+        let auth: ProxmoxAuth = serde_json::from_str(&data)?;
+        // Validate expiration
+        if let Some(csrf) = auth.csrf_token()
+            && csrf.is_expired(self.config.csrf_lifetime)
+        {
+            return Err(ProxmoxError::Session(
+                "Loaded CSRF token is expired".to_string(),
+            ));
+        }
+        if auth.ticket().is_expired(self.config.ticket_lifetime) {
+            return Err(ProxmoxError::Session(
+                "Loaded ticket is expired".to_string(),
+            ));
+        }
+        self.api_client.set_auth(auth).await;
+        Ok(())
+    }
+
+    /// Retrieves all resources in the cluster (VMs, containers, storage, nodes, etc.).
+    ///
+    /// This method calls the `/cluster/resources` endpoint and returns a list of
+    /// [`ClusterResource`] enums. The list can be filtered by resource type, node,
+    /// or status on the client side.
+    ///
+    /// # Errors
+    /// Returns [`ProxmoxError`] if the request fails, the client is not authenticated,
+    /// or the response cannot be parsed.
+    ///
+    /// # Example
+    /// ```
+    /// # use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
+    /// # use leeca_proxmox::ClusterResource;
+    /// #
+    /// # #[tokio::main]
+    /// # async fn run() -> ProxmoxResult<()> {
+    /// # let mut client = ProxmoxClient::builder()
+    /// #     .host("example.com")
+    /// #     .port(8006)
+    /// #     .credentials("leeca", "password", "pam")
+    /// #     .build().await?;
+    /// # client.login().await?;
+    /// let resources = client.cluster_resources().await?;
+    /// for resource in resources {
+    ///     match resource {
+    ///         ClusterResource::Qemu(vm) => println!("VM {} on node {}", vm.common.name.unwrap_or_default(), vm.common.node),
+    ///         ClusterResource::Lxc(ct) => println!("Container {} on node {}", ct.common.name.unwrap_or_default(), ct.common.node),
+    ///         _ => (),
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn cluster_resources(&self) -> ProxmoxResult<Vec<ClusterResource>> {
+        self.api_client.get("cluster/resources").await
+    }
+
+    /// Lists all nodes in the cluster.
+    ///
+    /// This method calls the `/nodes` endpoint and returns a list of nodes
+    /// with their basic information and resource usage statistics.
+    ///
+    /// # Errors
+    /// Returns [`ProxmoxError`] if the request fails or the response cannot be parsed.
+    ///
+    /// # Example
+    /// ```
+    /// # use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
+    /// # use leeca_proxmox::NodeListItem;
+    /// #
+    /// # #[tokio::main]
+    /// # async fn run() -> ProxmoxResult<()> {
+    /// # let mut client = ProxmoxClient::builder()
+    /// #     .host("example.com")
+    /// #     .port(8006)
+    /// #     .credentials("user", "pass", "pam")
+    /// #     .build().await?;
+    /// # client.login().await?;
+    /// let nodes = client.nodes().await?;
+    /// for node in nodes {
+    ///     println!("Node: {} (status: {})", node.node, node.status);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn nodes(&self) -> ProxmoxResult<Vec<NodeListItem>> {
+        self.api_client.get("nodes").await
+    }
+
+    /// Retrieves detailed status information for a specific node.
+    ///
+    /// This method calls the `/nodes/{node}/status` endpoint and returns
+    /// CPU, memory, swap, uptime, load average, and IO delay information.
+    ///
+    /// # Arguments
+    /// * `node` - The name of the node (e.g., "pve1").
+    ///
+    /// # Errors
+    /// Returns [`ProxmoxError`] if the request fails, the node doesn't exist,
+    /// or the response cannot be parsed.
+    ///
+    /// # Example
+    /// ```
+    /// # use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
+    /// # use leeca_proxmox::NodeStatus;
+    /// #
+    /// # #[tokio::main]
+    /// # async fn run() -> ProxmoxResult<()> {
+    /// # let mut client = ProxmoxClient::builder()
+    /// #     .host("example.com")
+    /// #     .port(8006)
+    /// #     .credentials("user", "pass", "pam")
+    /// #     .build().await?;
+    /// # client.login().await?;
+    /// let status = client.node_status("pve1").await?;
+    /// println!("CPU: {:.2}%, IO Delay: {:.2}%", status.cpu * 100.0, status.wait.unwrap_or(0.0) * 100.0);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn node_status(&self, node: &str) -> ProxmoxResult<NodeStatus> {
+        let path = format!("nodes/{}/status", node);
+        self.api_client.get(&path).await
+    }
+
+    /// Retrieves DNS configuration for a specific node.
+    ///
+    /// This method calls the `/nodes/{node}/dns` endpoint and returns
+    /// the DNS search domain and list of DNS servers.
+    ///
+    /// # Arguments
+    /// * `node` - The name of the node (e.g., "pve1").
+    ///
+    /// # Errors
+    /// Returns [`ProxmoxError`] if the request fails or the response cannot be parsed.
+    ///
+    /// # Example
+    /// ```
+    /// # use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
+    /// # use leeca_proxmox::NodeDnsConfig;
+    /// #
+    /// # #[tokio::main]
+    /// # async fn run() -> ProxmoxResult<()> {
+    /// # let mut client = ProxmoxClient::builder()
+    /// #     .host("example.com")
+    /// #     .port(8006)
+    /// #     .credentials("user", "pass", "pam")
+    /// #     .build().await?;
+    /// # client.login().await?;
+    /// let dns = client.node_dns("pve1").await?;
+    /// println!("Search domain: {}", dns.domain);
+    /// println!("DNS servers: {:?}", dns.servers);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn node_dns(&self, node: &str) -> ProxmoxResult<NodeDnsConfig> {
+        let path = format!("nodes/{}/dns", node);
+        self.api_client.get(&path).await
+    }
+
+    /// Lists all QEMU virtual machines on a specific node.
+    ///
+    /// # Arguments
+    /// * `node` - The name of the node (e.g., "pve1").
+    ///
+    /// # Errors
+    /// Returns [`ProxmoxError`] if the request fails or the response cannot be parsed.
+    ///
+    /// # Example
+    /// ```
+    /// # use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
+    /// # use leeca_proxmox::VmListItem;
+    /// #
+    /// # #[tokio::main]
+    /// # async fn run() -> ProxmoxResult<()> {
+    /// # let mut client = ProxmoxClient::builder()
+    /// #     .host("example.com")
+    /// #     .port(8006)
+    /// #     .credentials("user", "pass", "pam")
+    /// #     .build().await?;
+    /// # client.login().await?;
+    /// let vms = client.vms("pve1").await?;
+    /// for vm in vms {
+    ///     println!("VM {} (ID: {}): {}", vm.name, vm.vmid, vm.status);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn vms(&self, node: &str) -> ProxmoxResult<Vec<VmListItem>> {
+        let path = format!("nodes/{}/qemu", node);
+        self.api_client.get(&path).await
+    }
+
+    /// Retrieves detailed current status of a specific VM.
+    ///
+    /// # Arguments
+    /// * `node` - The name of the node where the VM resides.
+    /// * `vmid` - The VM identifier.
+    ///
+    /// # Errors
+    /// Returns [`ProxmoxError`] if the request fails or the response cannot be parsed.
+    ///
+    /// # Example
+    /// ```
+    /// # use leeca_proxmox::{ProxmoxClient, ProxmoxResult};
+    /// # use leeca_proxmox::VmStatusCurrent;
+    /// #
+    /// # #[tokio::main]
+    /// # async fn run() -> ProxmoxResult<()> {
+    /// # let mut client = ProxmoxClient::builder()
+    /// #     .host("example.com")
+    /// #     .port(8006)
+    /// #     .credentials("user", "pass", "pam")
+    /// #     .build().await?;
+    /// # client.login().await?;
+    /// let status = client.vm_status("pve1", 100).await?;
+    /// println!("VM {} is {}", status.name, status.status);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn vm_status(&self, node: &str, vmid: u32) -> ProxmoxResult<VmStatusCurrent> {
+        let path = format!("nodes/{}/qemu/{}/status/current", node, vmid);
+        self.api_client.get(&path).await
+    }
+
+    /// Starts a VM.
+    ///
+    /// Returns a task ID (UPID) that can be used to track the operation.
+    ///
+    /// # Arguments
+    /// * `node` - The node where the VM resides.
+    /// * `vmid` - The VM identifier.
+    ///
+    /// # Errors
+    /// Returns [`ProxmoxError`] if the request fails.
+    pub async fn start_vm(&self, node: &str, vmid: u32) -> ProxmoxResult<String> {
+        let path = format!("nodes/{}/qemu/{}/status/start", node, vmid);
+        self.api_client.post(&path, &serde_json::json!({})).await
+    }
+
+    /// Stops a VM immediately (like pulling the plug).
+    ///
+    /// Returns a task ID.
+    pub async fn stop_vm(&self, node: &str, vmid: u32) -> ProxmoxResult<String> {
+        let path = format!("nodes/{}/qemu/{}/status/stop", node, vmid);
+        self.api_client.post(&path, &serde_json::json!({})).await
+    }
+
+    /// Shuts down a VM gracefully (ACPI signal).
+    ///
+    /// Returns a task ID.
+    pub async fn shutdown_vm(&self, node: &str, vmid: u32) -> ProxmoxResult<String> {
+        let path = format!("nodes/{}/qemu/{}/status/shutdown", node, vmid);
+        self.api_client.post(&path, &serde_json::json!({})).await
+    }
+
+    /// Reboots a VM (like pressing reset button).
+    ///
+    /// Returns a task ID.
+    pub async fn reboot_vm(&self, node: &str, vmid: u32) -> ProxmoxResult<String> {
+        let path = format!("nodes/{}/qemu/{}/status/reboot", node, vmid);
+        self.api_client.post(&path, &serde_json::json!({})).await
+    }
+
+    /// Hard resets a VM.
+    ///
+    /// Returns a task ID.
+    pub async fn reset_vm(&self, node: &str, vmid: u32) -> ProxmoxResult<String> {
+        let path = format!("nodes/{}/qemu/{}/status/reset", node, vmid);
+        self.api_client.post(&path, &serde_json::json!({})).await
+    }
+
+    /// Deletes a VM.
+    ///
+    /// By default, this also removes associated disks. Use `purge: false` to keep disks.
+    ///
+    /// # Arguments
+    /// * `node` - The node where the VM resides.
+    /// * `vmid` - The VM identifier.
+    /// * `purge` - If `true` (default), remove VM from configuration and all related data (disks, snapshots, backups). If `false`, only remove the configuration, keeping disks.
+    ///
+    /// Returns a task ID.
+    pub async fn delete_vm(&self, node: &str, vmid: u32, purge: bool) -> ProxmoxResult<String> {
+        let path = format!("nodes/{}/qemu/{}", node, vmid);
+        // For DELETE with query parameters, we need to construct URL with params.
+        // Proxmox API accepts query parameters for DELETE requests.
+        let url = if purge {
+            format!("{}?purge=1", path)
+        } else {
+            format!("{}?purge=0", path)
+        };
+        self.api_client.delete(&url).await
+    }
+
+    /// Creates a new VM.
+    ///
+    /// # Arguments
+    /// * `node` - The node where to create the VM.
+    /// * `params` - Creation parameters (see [`CreateVmParams`]).
+    ///
+    /// Returns a task ID.
+    ///
+    /// # Errors
+    /// Returns [`ProxmoxError`] if validation fails or the request cannot be sent.
+    pub async fn create_vm(&self, node: &str, params: &CreateVmParams) -> ProxmoxResult<String> {
+        let path = format!("nodes/{}/qemu", node);
+        self.api_client.post(&path, params).await
+    }
+
+    /// Retrieves the full configuration of a VM.
+    ///
+    /// # Arguments
+    /// * `node` - The node where the VM resides.
+    /// * `vmid` - The VM identifier.
+    ///
+    /// Returns the current configuration.
+    pub async fn vm_config(&self, node: &str, vmid: u32) -> ProxmoxResult<VmConfig> {
+        let path = format!("nodes/{}/qemu/{}/config", node, vmid);
+        self.api_client.get(&path).await
+    }
+
+    /// Updates the configuration of a VM.
+    ///
+    /// # Arguments
+    /// * `node` - The node where the VM resides.
+    /// * `vmid` - The VM identifier.
+    /// * `params` - Parameters to update (fields with `Some` value will be updated, `None` leaves unchanged).
+    ///
+    /// Returns a task ID.
+    ///
+    /// # Note
+    /// To delete a parameter, you need to set it to `null` or use a special value. The Proxmox API uses
+    /// the `delete` query parameter for that. This is not yet supported; for now only setting values is possible.
+    pub async fn update_vm_config(
+        &self,
+        node: &str,
+        vmid: u32,
+        params: &CreateVmParams, // Reusing CreateVmParams with Option fields works for updates
+    ) -> ProxmoxResult<String> {
+        let path = format!("nodes/{}/qemu/{}/config", node, vmid);
+        self.api_client.put(&path, params).await
+    }
 }
 
 #[cfg(test)]
 mod tests {
     mod integration;
+    mod resources;
     use super::*;
     use std::time::Duration;
 
@@ -504,5 +930,62 @@ mod tests {
 
         assert!(!client.is_ticket_expired().await);
         assert!(!client.is_csrf_expired().await);
+    }
+
+    #[tokio::test]
+    async fn test_session_save_load() {
+        use crate::core::domain::model::proxmox_auth::ProxmoxAuth;
+        use crate::core::domain::value_object::{ProxmoxCSRFToken, ProxmoxTicket};
+        use tempfile::NamedTempFile;
+
+        let ticket = ProxmoxTicket::new_unchecked("PVE:ticket".to_string());
+        let csrf = ProxmoxCSRFToken::new_unchecked("id:val".to_string());
+        let auth = ProxmoxAuth::new(ticket.clone(), Some(csrf.clone()));
+
+        // Build a client with dummy connection
+        let connection = ProxmoxConnection::new(
+            ProxmoxHost::new_unchecked("host".to_string()),
+            ProxmoxPort::new_unchecked(8006),
+            ProxmoxUsername::new_unchecked("user".to_string()),
+            ProxmoxPassword::new_unchecked("pass".to_string()),
+            ProxmoxRealm::new_unchecked("pam".to_string()),
+            true,
+            false,
+            ProxmoxUrl::new_unchecked("https://host:8006/".to_string()),
+        );
+        let api_client = ApiClient::new(connection, ValidationConfig::default()).unwrap();
+        api_client.set_auth(auth).await;
+
+        let client = ProxmoxClient {
+            api_client,
+            config: ValidationConfig::default(),
+        };
+
+        // Save to temp file
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_path_buf();
+        let written = client.save_session_to_file(&path).await.unwrap();
+        assert!(written > 0);
+
+        // Create a new client and load session
+        let new_client_builder = ProxmoxClient::builder()
+            .host("host")
+            .port(8006)
+            .credentials("user", "password", "pam")
+            .secure(false)
+            .accept_invalid_certs(false);
+        let new_client = new_client_builder
+            .with_session(std::fs::File::open(&path).unwrap())
+            .await
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        assert!(new_client.is_authenticated().await);
+        assert_eq!(
+            client.auth_token().await.unwrap().as_str(),
+            new_client.auth_token().await.unwrap().as_str()
+        );
     }
 }
