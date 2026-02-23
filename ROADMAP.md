@@ -3,6 +3,7 @@
 ## Completed Versions
 
 ### 0.3.0 (In Progress)
+- ✅ **VM operations** – List, status, start, stop, shutdown, reboot, reset, delete, create, get/update config.
 - ✅ **HTTP Client Refactor**: Centralised request handling with automatic authentication and ticket refresh.
 - ✅ **Enhanced Security**
   - ✅ Rate limiting (client‑side)
@@ -11,11 +12,11 @@
 - ✅ **Cluster resource discovery** – Unified view of all resources (VMs, containers, storage, nodes) via `/cluster/resources`.
 - ✅ **Node management** – List nodes, get node status, and retrieve DNS configuration via `/nodes`, `/nodes/{node}/status`, and `/nodes/{node}/dns` endpoints.
 - 🔄 **Resource Management** (next)
-  - VM operations (start, stop, reboot, create, delete)
+  - ✅ VM operations (start, stop, reboot, create, delete)
   - Container (LXC) operations
   - Storage management (list, create, delete)
   - Network configuration
-  - Node management
+  - ✅ Node management
 
 ### 0.2.0 (Current Release)
 - ✅ **Validation overhaul**: All extra checks (password strength, DNS, reserved usernames) are now opt‑in, off by default.
